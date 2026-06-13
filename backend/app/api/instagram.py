@@ -2,6 +2,7 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, field_validator
 from app.services.instagram_service import get_instagram_info, download_instagram
 from fastapi.responses import FileResponse
+from typing import Optional
 
 router = APIRouter(prefix="/instagram", tags=["instagram"])
 
@@ -20,6 +21,7 @@ class InstaUrlRequest(BaseModel):
 
 class DownloadRequest(BaseModel):
     url: str
+    format_id: Optional[str] = None
 
 @router.post("/info")
 async def insta_info(req: InstaUrlRequest):
@@ -31,7 +33,7 @@ async def insta_info(req: InstaUrlRequest):
 @router.post("/download")
 async def download(req: DownloadRequest):
     try:
-        path, filename = await download_instagram(req.url)
+        path, filename = await download_instagram(req.url, req.format_id)
         if not path:
             raise HTTPException(status_code=500, detail="Download failed")
         return FileResponse(
@@ -41,3 +43,4 @@ async def download(req: DownloadRequest):
         )
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+

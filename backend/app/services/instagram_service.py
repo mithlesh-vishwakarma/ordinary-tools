@@ -1,8 +1,9 @@
-import instaloader
+import yt_dlp
 import re
 import os
-import glob
+import uuid
 import asyncio
+import glob
 from typing import Optional
 
 DOWNLOAD_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "downloads")
@@ -13,79 +14,129 @@ def get_shortcode(url: str) -> Optional[str]:
     match = re.search(pattern, url)
     return match.group(1) if match else None
 
-def _fetch_insta_post(shortcode: str):
-    L = instaloader.Instaloader(
-        dirname_pattern=os.path.join(DOWNLOAD_DIR, '{target}'),
-        filename_pattern='{shortcode}',
-        download_video_thumbnails=False,
-        save_metadata=False,
-        post_metadata_txt_pattern=''
-    )
-    post = instaloader.Post.from_shortcode(L.context, shortcode)
-    return post
+def _classify_format(vcodec: str, acodec: str) -> str:
+    has_video = vcodec and vcodec != "none"
+    has_audio = acodec and acodec != "none"
+    if has_video and has_audio:
+        return "Combined"
+    elif has_video:
+        return "Video Only"
+    elif has_audio:
+        return "Audio Only"
+    return "N/A"
 
-def _download_insta_post(shortcode: str):
-    L = instaloader.Instaloader(
-        dirname_pattern=os.path.join(DOWNLOAD_DIR, '{target}'),
-        filename_pattern='{shortcode}',
-        download_video_thumbnails=False,
-        save_metadata=False,
-        post_metadata_txt_pattern=''
-    )
-    post = instaloader.Post.from_shortcode(L.context, shortcode)
-    L.download_post(post, target=shortcode)
-    
-    # Find the downloaded file(s)
-    target_dir = os.path.join(DOWNLOAD_DIR, shortcode)
-    files = glob.glob(os.path.join(target_dir, "*"))
-    # Filter for video or image
-    media_files = [f for f in files if f.endswith(('.mp4', '.jpg', '.png', '.webp'))]
-    return media_files[0] if media_files else None
+def _format_duration(seconds: int) -> str:
+    h, remainder = divmod(seconds, 3600)
+    m, s = divmod(remainder, 60)
+    if h:
+        return f"{h}:{m:02d}:{s:02d}"
+    return f"{m}:{s:02d}"
+
+def _extract_info(url: str, opts: dict):
+    with yt_dlp.YoutubeDL(opts) as ydl:
+        return ydl.extract_info(url, download=False)
+
+def _download(url: str, opts: dict):
+    with yt_dlp.YoutubeDL(opts) as ydl:
+        ydl.download([url])
 
 async def get_instagram_info(url: str):
     shortcode = get_shortcode(url)
     if not shortcode:
         raise ValueError("Invalid Instagram URL")
     
+    ydl_opts = {"quiet": True, "no_warnings": True}
     loop = asyncio.get_event_loop()
-    post = await loop.run_in_executor(None, _fetch_insta_post, shortcode)
+    info = await loop.run_in_executor(None, _extract_info, url, ydl_opts)
+    
+    raw_formats = info.get("formats", [])
+    formats = []
+    for f in raw_formats:
+        vcodec = f.get("vcodec") or "none"
+        acodec = f.get("acodec") or "none"
+        ftype = _classify_format(vcodec, acodec)
+        if ftype == "N/A": continue
+        formats.append({
+            "format_id": str(f.get("format_id", "")),
+            "ext": f.get("ext", ""),
+            "resolution": f.get("resolution") or f.get("format_note") or "Original",
+            "type": ftype,
+            "vcodec": vcodec[:20],
+            "acodec": acodec[:20],
+            "filesize": f.get("filesize") or f.get("filesize_approx"),
+            "note": f.get("format_note", ""),
+        })
+        
+    if not formats:
+        formats.append({
+            "format_id": "best",
+            "ext": "mp4",
+            "resolution": "Original",
+            "type": "Combined",
+            "vcodec": "N/A",
+            "acodec": "N/A",
+            "filesize": None,
+            "note": "Highest quality available"
+        })
+        
+    duration = int(info.get("duration") or 0)
+    duration_str = _format_duration(duration) if duration > 0 else "Static"
+    
+    upload_date_raw = info.get("upload_date")
+    if upload_date_raw and len(upload_date_raw) == 8:
+        upload_date = f"{upload_date_raw[:4]}-{upload_date_raw[4:6]}-{upload_date_raw[6:]}"
+    else:
+        upload_date = upload_date_raw
+        
+    width = info.get("width") or 0
+    height = info.get("height") or 0
     
     return {
-        "title": f"Instagram Post by {post.owner_username}",
-        "thumbnail": post.url,
-        "duration": post.video_duration if post.is_video else 0,
-        "duration_string": f"{int(post.video_duration)}s" if post.is_video else "Static",
-        "channel": post.owner_username,
-        "view_count": post.video_view_count if post.is_video else None,
-        "like_count": post.likes,
-        "comment_count": post.comments,
-        "repost_count": None,
-        "is_vertical": True,
-        "upload_date": post.date_utc.strftime("%Y-%m-%d"),
-        "formats": [
-            {
-                "format_id": "original",
-                "ext": "mp4" if post.is_video else "jpg",
-                "resolution": "Original",
-                "type": "Combined",
-                "vcodec": "N/A",
-                "acodec": "N/A",
-                "filesize": None,
-                "note": "Highest quality available"
-            }
-        ]
+        "title": info.get("title") or f"Instagram Post by {info.get('channel') or info.get('uploader') or 'User'}",
+        "thumbnail": info.get("thumbnail") or "",
+        "duration": duration,
+        "duration_string": duration_str,
+        "channel": info.get("channel") or info.get("uploader") or "Unknown",
+        "view_count": info.get("view_count"),
+        "like_count": info.get("like_count"),
+        "comment_count": info.get("comment_count"),
+        "repost_count": info.get("repost_count"),
+        "is_vertical": height > width or True,
+        "upload_date": upload_date,
+        "formats": formats,
     }
 
-async def download_instagram(url: str):
+async def download_instagram(url: str, format_id: Optional[str] = None):
     shortcode = get_shortcode(url)
     if not shortcode:
         raise ValueError("Invalid Instagram URL")
+        
+    file_id = uuid.uuid4().hex[:12]
+    output_template = os.path.join(DOWNLOAD_DIR, f"{file_id}_%(title)s.%(ext)s")
+    
+    # If format_id is specified and is not a default one, use it
+    if format_id and format_id not in ("best", "original"):
+        format_str = f"{format_id}+bestaudio[ext=m4a]/{format_id}/best"
+    else:
+        format_str = "bestvideo+bestaudio/best"
+        
+    ydl_opts = {
+        "format": format_str,
+        "outtmpl": output_template,
+        "merge_output_format": "mp4",
+        "quiet": True,
+        "no_warnings": True,
+        "postprocessors": [{"key": "FFmpegVideoConvertor", "preferedformat": "mp4"}],
+    }
     
     loop = asyncio.get_event_loop()
-    filepath = await loop.run_in_executor(None, _download_insta_post, shortcode)
+    await loop.run_in_executor(None, _download, url, ydl_opts)
     
-    if not filepath:
+    pattern = os.path.join(DOWNLOAD_DIR, f"{file_id}_*")
+    files = glob.glob(pattern)
+    if not files:
         return None, None
         
-    filename = os.path.basename(filepath)
+    filepath = files[0]
+    filename = os.path.basename(filepath).replace(f"{file_id}_", "", 1)
     return filepath, filename
