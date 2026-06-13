@@ -1,0 +1,22 @@
+# Virtual Environments
+venv/
+.venv/
+ENV/
+env/
+venv.bak/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Node.js
+node_modules/
+
+# IDE & Editor
+.vscode/
+.idea/
+
+# Other
+*.DS_Store
+Thumbs.db
