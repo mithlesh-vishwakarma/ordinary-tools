@@ -131,21 +131,16 @@ async def download_instagram(url: str, format_id: Optional[str] = None):
         format_str = "bestvideo+bestaudio/best"
         
     ydl_opts = {
-        "format": format_str,
-        "outtmpl": output_template,
-        "merge_output_format": "mp4",
-        "quiet": True,
-        "no_warnings": True,
-        "postprocessors": [{"key": "FFmpegVideoConvertor", "preferedformat": "mp4"}],
-        "cookiefile": "cookies.txt",
-        "nocheckcertificate": True,
-        "geo_bypass": True,
-        "extractor_args": {
-            "youtube": {
-                "player_client": ["android"]
-            }
+    "quiet": True,
+    "cookiefile": "cookies.txt",
+    "nocheckcertificate": True,
+    "geo_bypass": True,
+    "extractor_args": {
+        "youtube": {
+            "player_client": ["android"]
         }
     }
+}
     
     loop = asyncio.get_event_loop()
     await loop.run_in_executor(None, _download, url, ydl_opts)

@@ -35,17 +35,16 @@ def _download(url: str, opts: dict):
 
 async def get_video_info(url: str):
     ydl_opts = {
-        "quiet": True,
-        "no_warnings": True,
-        "cookiefile": "cookies.txt",
-        "nocheckcertificate": True,
-        "geo_bypass": True,
-        "extractor_args": {
-            "youtube": {
-                "player_client": ["android"]
-            }
+    "quiet": True,
+    "cookiefile": "cookies.txt",
+    "nocheckcertificate": True,
+    "geo_bypass": True,
+    "extractor_args": {
+        "youtube": {
+            "player_client": ["android"]
         }
     }
+}
     loop = asyncio.get_event_loop()
     info = await loop.run_in_executor(None, _extract_info, url, ydl_opts)
     
