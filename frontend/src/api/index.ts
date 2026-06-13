@@ -1,6 +1,7 @@
 import type { VideoInfo } from "../types";
 
-const API_BASE = "/api";
+const API = import.meta.env.VITE_API_URL || "";
+const API_BASE = `${API}/api`;
 
 export async function fetchMediaInfo(url: string, type: 'youtube' | 'instagram'): Promise<VideoInfo> {
   const endpoint = type === 'youtube' ? '/youtube/info' : '/instagram/info';
