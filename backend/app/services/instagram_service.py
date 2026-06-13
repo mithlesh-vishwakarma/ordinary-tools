@@ -46,16 +46,16 @@ async def get_instagram_info(url: str):
         raise ValueError("Invalid Instagram URL")
     
     ydl_opts = {
-    "quiet": True,
-    "cookiefile": "cookies.txt",
-    "nocheckcertificate": True,
-    "geo_bypass": True,
-    "extractor_args": {
-        "youtube": {
-            "player_client": ["android"]
+        "quiet": True,
+        "cookiefile": "cookies.txt",
+        "nocheckcertificate": True,
+        "geo_bypass": True,
+        "extractor_args": {
+            "youtube": {
+                "player_client": ["android"]
+            }
         }
     }
-}
     loop = asyncio.get_event_loop()
     info = await loop.run_in_executor(None, _extract_info, url, ydl_opts)
     
@@ -137,6 +137,14 @@ async def download_instagram(url: str, format_id: Optional[str] = None):
         "quiet": True,
         "no_warnings": True,
         "postprocessors": [{"key": "FFmpegVideoConvertor", "preferedformat": "mp4"}],
+        "cookiefile": "cookies.txt",
+        "nocheckcertificate": True,
+        "geo_bypass": True,
+        "extractor_args": {
+            "youtube": {
+                "player_client": ["android"]
+            }
+        }
     }
     
     loop = asyncio.get_event_loop()
