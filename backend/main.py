@@ -9,14 +9,13 @@ import asyncio
 app = FastAPI(
     title="OrdinaryTools API",
     description="Unified API for YouTube and Instagram downloads",
-    version="2.0.0",
+    version="2.1.0",
 )
 
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
-        "http://localhost:5173",
-        "https://ordinary-tools.vercel.app",
+        "https://ordinary-tools.vercel.app"
     ],
     allow_credentials=True,
     allow_methods=["*"],
