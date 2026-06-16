@@ -52,28 +52,21 @@ def _download(url: str, opts: dict):
 
 async def get_video_info(url: str):
     logger.info(f"Fetching video info for YouTube URL: {url}")
-    ydl_opts = {
-        "quiet": True,
-        "nocheckcertificate": True,
-        "geo_bypass": True,
-        "extractor_args": {
-            "youtube": {
-                "player_client": ["android"]
-            }
-        }
-    }
     
     cookie_path = "/tmp/cookies/youtube_cookies.txt"
     cookies_enabled = os.path.exists(cookie_path)
     cookies_status = "enabled" if cookies_enabled else "disabled"
     
-    logger.info(f"yt-dlp version: {yt_dlp.version.__version__} | ffmpeg version: {FFMPEG_VERSION} | YouTube cookies: {cookies_status}")
+    logger.info(f"yt-dlp version: {yt_dlp.version.__version__} | URL: {url} | Cookies: {cookies_status}")
+
+    ydl_opts = {
+        "quiet": True,
+        "no_warnings": True,
+        "extract_flat": False,
+    }
 
     if cookies_enabled:
         ydl_opts["cookiefile"] = cookie_path
-        logger.info(f"Using cookies file: {cookie_path}")
-    else:
-        logger.info("No cookies file found. Fetching info without cookies.")
 
     try:
         loop = asyncio.get_event_loop()
@@ -86,6 +79,9 @@ async def get_video_info(url: str):
         raise ValueError("YouTube extraction failed")
     
     raw_formats = info.get("formats", [])
+    formats_count = len(raw_formats)
+    logger.info(f"Available formats count: {formats_count}")
+
     formats = []
     for f in raw_formats:
         vcodec = f.get("vcodec") or "none"
@@ -113,6 +109,7 @@ async def get_video_info(url: str):
         "thumbnail": info.get("thumbnail", ""),
         "duration": duration,
         "duration_string": _format_duration(duration),
+        "uploader": info.get("uploader", "Unknown"),
         "channel": info.get("channel") or info.get("uploader", "Unknown"),
         "view_count": info.get("view_count"),
         "like_count": info.get("like_count"),
@@ -127,60 +124,118 @@ async def download_video(url: str, format_id: str = "best"):
     file_id = uuid.uuid4().hex[:12]
     output_template = os.path.join(DOWNLOAD_DIR, f"{file_id}_%(title)s.%(ext)s")
     
-    format_str = (
-        f"{format_id}+bestaudio[ext=m4a]/{format_id}/best"
-        if format_id != "best"
-        else "bestvideo+bestaudio/best"
-    )
-
-    logger.info(f"YouTube download started: URL={url}, format={format_id}")
-    
-    ydl_opts = {
-        "format": format_str,
-        "outtmpl": output_template,
-        "merge_output_format": "mp4",
-        "quiet": True,
-        "no_warnings": True,
-        "postprocessors": [{"key": "FFmpegVideoConvertor", "preferedformat": "mp4"}],
-        "nocheckcertificate": True,
-        "geo_bypass": True,
-        "extractor_args": {
-            "youtube": {
-                "player_client": ["android"]
-            }
-        }
-    }
-
     cookie_path = "/tmp/cookies/youtube_cookies.txt"
     cookies_enabled = os.path.exists(cookie_path)
     cookies_status = "enabled" if cookies_enabled else "disabled"
     
-    logger.info(f"yt-dlp version: {yt_dlp.version.__version__} | ffmpeg version: {FFMPEG_VERSION} | YouTube cookies: {cookies_status}")
+    logger.info(f"yt-dlp version: {yt_dlp.version.__version__} | URL: {url} | Cookies: {cookies_status}")
 
+    # 1. Run format discovery using minimal options
+    ydl_opts_info = {
+        "quiet": True,
+        "no_warnings": True,
+        "extract_flat": False,
+    }
     if cookies_enabled:
-        ydl_opts["cookiefile"] = cookie_path
-        logger.info(f"Using cookies file for download: {cookie_path}")
-    else:
-        logger.info("No cookies file found. Downloading without cookies.")
+        ydl_opts_info["cookiefile"] = cookie_path
 
     try:
         loop = asyncio.get_event_loop()
-        await loop.run_in_executor(None, _download, url, ydl_opts)
-        
-        pattern = os.path.join(DOWNLOAD_DIR, f"{file_id}_*")
-        files = glob.glob(pattern)
-        if not files:
-            logger.error(f"No file found after YouTube download completion for URL: {url}")
-            return None, None
-        
-        filepath = files[0]
-        filename = os.path.basename(filepath).replace(f"{file_id}_", "", 1)
-        logger.info(f"YouTube download completed: URL={url}, Saved={filename}")
-        return filepath, filename
+        info = await loop.run_in_executor(None, _extract_info, url, ydl_opts_info)
     except Exception as e:
         logger.error(
-            f"YouTube download failed for URL: {url} | Error: {str(e)} | Cookies enabled: {cookies_enabled}",
+            f"Format discovery failed for URL: {url} | Error: {str(e)} | Cookies enabled: {cookies_enabled}",
             exc_info=True
         )
         raise ValueError("YouTube extraction failed")
 
+    formats_list = info.get("formats", [])
+    formats_count = len(formats_list)
+    logger.info(f"Available formats count: {formats_count}")
+
+    # Log available formats (format ids)
+    logger.info("Available formats:")
+    available_ids = []
+    for f in formats_list:
+        fid = f.get("format_id")
+        if fid:
+            fid_str = str(fid)
+            available_ids.append(fid_str)
+            logger.info(fid_str)
+
+    # Log formats resolutions/notes for diagnostic convenience
+    resolutions_log = "Formats resolutions/notes:\n" + "\n".join(
+        f"{f.get('format_id')}: {f.get('resolution') or f.get('format_note', 'N/A')}"
+        for f in formats_list
+    )
+    logger.info(resolutions_log)
+
+    # Determine selected format ID for logging
+    selected_fid = format_id
+    if format_id == "best" and available_ids:
+        selected_fid = available_ids[-1]
+    logger.info(f"Selected:\n{selected_fid}")
+
+    # 2. Candidate format sequences
+    format_options = []
+    if format_id != "best":
+        format_options.append(f"{format_id}+bestaudio[ext=m4a]/{format_id}/best")
+    format_options.append("bestvideo+bestaudio/best")
+    format_options.append("best")
+    format_options.append("worst")
+
+    download_success = False
+    last_error = None
+    filepath, filename = None, None
+
+    for chosen_format in format_options:
+        logger.info(f"Attempting download with format option: {chosen_format}")
+        
+        ydl_opts = {
+            "format": chosen_format,
+            "outtmpl": output_template,
+            "merge_output_format": "mp4",
+            "quiet": True,
+            "no_warnings": True,
+            "postprocessors": [{"key": "FFmpegVideoConvertor", "preferedformat": "mp4"}],
+            "nocheckcertificate": True,
+            "geo_bypass": True,
+            "extractor_args": {
+                "youtube": {
+                    "player_client": ["android"]
+                }
+            }
+        }
+        if cookies_enabled:
+            ydl_opts["cookiefile"] = cookie_path
+
+        try:
+            await loop.run_in_executor(None, _download, url, ydl_opts)
+            
+            pattern = os.path.join(DOWNLOAD_DIR, f"{file_id}_*")
+            files = glob.glob(pattern)
+            if files:
+                filepath = files[0]
+                filename = os.path.basename(filepath).replace(f"{file_id}_", "", 1)
+                download_success = True
+                logger.info(f"YouTube download succeeded with format option: {chosen_format}")
+                break
+            else:
+                logger.warning(f"Download completed but no file was found matching pattern {pattern} for format {chosen_format}")
+        except Exception as e:
+            last_error = e
+            error_msg = str(e)
+            logger.warning(f"Download failed with format option '{chosen_format}': {error_msg}")
+            if "Requested format is not available" in error_msg:
+                logger.info("Selected format unavailable. Trying fallback format.")
+
+    if not download_success:
+        logger.error(
+            f"YouTube download failed for URL: {url} | Last Error: {str(last_error)} | Cookies enabled: {cookies_enabled}",
+            exc_info=True
+        )
+        if last_error and "Requested format is not available" in str(last_error):
+            raise ValueError("Selected format unavailable. Trying fallback format.")
+        raise ValueError("YouTube extraction failed")
+
+    return filepath, filename
