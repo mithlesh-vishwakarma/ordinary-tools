@@ -8,7 +8,7 @@ from dotenv import load_dotenv
 # Load environment variables
 load_dotenv()
 
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.exceptions import RequestValidationError
@@ -114,6 +114,7 @@ async def global_exception_handler(request: Request, exc: Exception):
 
 # Root endpoint for Render health checks
 @app.get("/")
+@app.head("/")
 async def root():
     return {
         "status": "ok",
