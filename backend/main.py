@@ -123,9 +123,11 @@ async def root():
 
 @app.get("/api/health")
 async def health():
+    cookies_enabled = os.path.exists("/tmp/cookies/youtube_cookies.txt")
     return {
         "status": "ok",
-        "service": "ordinary-tools-api"
+        "service": "ordinary-tools-api",
+        "youtube_cookies_enabled": cookies_enabled
     }
 
 # Background task for cleanup
@@ -138,6 +140,21 @@ async def scheduled_cleanup():
 async def startup_event():
     logger.info("Initializing OrdinaryTools API services...")
     
+    # Initialize YouTube cookies if configured
+    try:
+        cookies_dir = "/tmp/cookies"
+        os.makedirs(cookies_dir, exist_ok=True)
+        youtube_cookies = os.getenv("YOUTUBE_COOKIES")
+        if youtube_cookies:
+            cookies_file = os.path.join(cookies_dir, "youtube_cookies.txt")
+            with open(cookies_file, "w", encoding="utf-8") as f:
+                f.write(youtube_cookies)
+            logger.info("Youtube cookies loaded successfully")
+        else:
+            logger.info("No YouTube cookies configured")
+    except Exception as e:
+        logger.error(f"Failed to initialize YouTube cookies: {e}", exc_info=True)
+
     # Verify download directory
     try:
         os.makedirs(DOWNLOAD_DIR, exist_ok=True)

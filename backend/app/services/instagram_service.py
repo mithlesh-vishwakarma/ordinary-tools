@@ -63,8 +63,9 @@ async def get_instagram_info(url: str):
         }
     }
     
-    cookie_path = os.getenv("COOKIE_FILE_PATH", "cookies.txt")
-    if os.path.exists(cookie_path):
+    cookie_path = "/tmp/cookies/youtube_cookies.txt"
+    cookies_enabled = os.path.exists(cookie_path)
+    if cookies_enabled:
         ydl_opts["cookiefile"] = cookie_path
         logger.info(f"Using cookies file: {cookie_path}")
     else:
@@ -74,7 +75,10 @@ async def get_instagram_info(url: str):
         loop = asyncio.get_event_loop()
         info = await loop.run_in_executor(None, _extract_info, url, ydl_opts)
     except Exception as e:
-        logger.error(f"Failed to extract info for Instagram URL {url}: {e}", exc_info=True)
+        logger.error(
+            f"Failed to extract info for Instagram URL: {url} | Error: {str(e)} | Cookies enabled: {cookies_enabled}",
+            exc_info=True
+        )
         raise ValueError(f"Failed to fetch Instagram media details: {str(e)}")
     
     raw_formats = info.get("formats", [])
@@ -164,8 +168,9 @@ async def download_instagram(url: str, format_id: Optional[str] = None):
         }
     }
     
-    cookie_path = os.getenv("COOKIE_FILE_PATH", "cookies.txt")
-    if os.path.exists(cookie_path):
+    cookie_path = "/tmp/cookies/youtube_cookies.txt"
+    cookies_enabled = os.path.exists(cookie_path)
+    if cookies_enabled:
         ydl_opts["cookiefile"] = cookie_path
         logger.info(f"Using cookies file for Instagram download: {cookie_path}")
     else:
@@ -186,6 +191,9 @@ async def download_instagram(url: str, format_id: Optional[str] = None):
         logger.info(f"Instagram download completed: URL={url}, Saved={filename}")
         return filepath, filename
     except Exception as e:
-        logger.error(f"Instagram download failed for URL={url}: {e}", exc_info=True)
+        logger.error(
+            f"Instagram download failed for URL: {url} | Error: {str(e)} | Cookies enabled: {cookies_enabled}",
+            exc_info=True
+        )
         raise ValueError(f"Instagram download failed: {str(e)}")
 
