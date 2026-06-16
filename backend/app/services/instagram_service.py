@@ -4,9 +4,14 @@ import os
 import uuid
 import asyncio
 import glob
+import logging
 from typing import Optional
+from dotenv import load_dotenv
 
-DOWNLOAD_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "downloads")
+load_dotenv()
+logger = logging.getLogger("ordinary-tools-api.instagram")
+
+DOWNLOAD_DIR = os.getenv("DOWNLOAD_DIR", "/tmp/downloads")
 os.makedirs(DOWNLOAD_DIR, exist_ok=True)
 
 def get_shortcode(url: str) -> Optional[str]:
@@ -41,13 +46,14 @@ def _download(url: str, opts: dict):
         ydl.download([url])
 
 async def get_instagram_info(url: str):
+    logger.info(f"Fetching media info for Instagram URL: {url}")
     shortcode = get_shortcode(url)
     if not shortcode:
+        logger.warning(f"Invalid Instagram URL provided: {url}")
         raise ValueError("Invalid Instagram URL")
     
     ydl_opts = {
         "quiet": True,
-        "cookiefile": "cookies.txt",
         "nocheckcertificate": True,
         "geo_bypass": True,
         "extractor_args": {
@@ -56,8 +62,20 @@ async def get_instagram_info(url: str):
             }
         }
     }
-    loop = asyncio.get_event_loop()
-    info = await loop.run_in_executor(None, _extract_info, url, ydl_opts)
+    
+    cookie_path = os.getenv("COOKIE_FILE_PATH", "cookies.txt")
+    if os.path.exists(cookie_path):
+        ydl_opts["cookiefile"] = cookie_path
+        logger.info(f"Using cookies file: {cookie_path}")
+    else:
+        logger.info("No cookies file found. Fetching Instagram info without cookies.")
+
+    try:
+        loop = asyncio.get_event_loop()
+        info = await loop.run_in_executor(None, _extract_info, url, ydl_opts)
+    except Exception as e:
+        logger.error(f"Failed to extract info for Instagram URL {url}: {e}", exc_info=True)
+        raise ValueError(f"Failed to fetch Instagram media details: {str(e)}")
     
     raw_formats = info.get("formats", [])
     formats = []
@@ -101,6 +119,7 @@ async def get_instagram_info(url: str):
     width = info.get("width") or 0
     height = info.get("height") or 0
     
+    logger.info(f"Successfully retrieved Instagram info: {info.get('title') or shortcode}")
     return {
         "title": info.get("title") or f"Instagram Post by {info.get('channel') or info.get('uploader') or 'User'}",
         "thumbnail": info.get("thumbnail") or "",
@@ -117,39 +136,56 @@ async def get_instagram_info(url: str):
     }
 
 async def download_instagram(url: str, format_id: Optional[str] = None):
+    logger.info(f"Instagram download requested: URL={url}, format={format_id}")
     shortcode = get_shortcode(url)
     if not shortcode:
+        logger.warning(f"Invalid Instagram URL provided: {url}")
         raise ValueError("Invalid Instagram URL")
         
     file_id = uuid.uuid4().hex[:12]
     output_template = os.path.join(DOWNLOAD_DIR, f"{file_id}_%(title)s.%(ext)s")
     
-    # If format_id is specified and is not a default one, use it
     if format_id and format_id not in ("best", "original"):
         format_str = f"{format_id}+bestaudio[ext=m4a]/{format_id}/best"
     else:
         format_str = "bestvideo+bestaudio/best"
         
     ydl_opts = {
-    "quiet": True,
-    "cookiefile": "cookies.txt",
-    "nocheckcertificate": True,
-    "geo_bypass": True,
-    "extractor_args": {
-        "youtube": {
-            "player_client": ["android"]
+        "format": format_str,
+        "outtmpl": output_template,
+        "quiet": True,
+        "no_warnings": True,
+        "nocheckcertificate": True,
+        "geo_bypass": True,
+        "extractor_args": {
+            "youtube": {
+                "player_client": ["android"]
+            }
         }
     }
-}
     
-    loop = asyncio.get_event_loop()
-    await loop.run_in_executor(None, _download, url, ydl_opts)
+    cookie_path = os.getenv("COOKIE_FILE_PATH", "cookies.txt")
+    if os.path.exists(cookie_path):
+        ydl_opts["cookiefile"] = cookie_path
+        logger.info(f"Using cookies file for Instagram download: {cookie_path}")
+    else:
+        logger.info("No cookies file found. Downloading Instagram media without cookies.")
     
-    pattern = os.path.join(DOWNLOAD_DIR, f"{file_id}_*")
-    files = glob.glob(pattern)
-    if not files:
-        return None, None
+    try:
+        loop = asyncio.get_event_loop()
+        await loop.run_in_executor(None, _download, url, ydl_opts)
         
-    filepath = files[0]
-    filename = os.path.basename(filepath).replace(f"{file_id}_", "", 1)
-    return filepath, filename
+        pattern = os.path.join(DOWNLOAD_DIR, f"{file_id}_*")
+        files = glob.glob(pattern)
+        if not files:
+            logger.error(f"No file found after Instagram download completion for URL: {url}")
+            return None, None
+            
+        filepath = files[0]
+        filename = os.path.basename(filepath).replace(f"{file_id}_", "", 1)
+        logger.info(f"Instagram download completed: URL={url}, Saved={filename}")
+        return filepath, filename
+    except Exception as e:
+        logger.error(f"Instagram download failed for URL={url}: {e}", exc_info=True)
+        raise ValueError(f"Instagram download failed: {str(e)}")
+

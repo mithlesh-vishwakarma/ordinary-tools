@@ -1,0 +1,9 @@
+.venv/
+__pycache__/
+downloads/
+node_modules/
+.env
+.git
+*.pyc
+*.pyo
+*.pyd

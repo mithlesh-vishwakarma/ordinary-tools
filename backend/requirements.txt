@@ -4,3 +4,4 @@ yt-dlp>=2024.8.0
 python-multipart==0.0.9
 instaloader==4.12
 gunicorn>=22.0.0
+python-dotenv==1.0.1

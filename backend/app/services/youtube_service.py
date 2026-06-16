@@ -3,8 +3,13 @@ import os
 import uuid
 import asyncio
 import glob
+import logging
+from dotenv import load_dotenv
 
-DOWNLOAD_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "downloads")
+load_dotenv()
+logger = logging.getLogger("ordinary-tools-api.youtube")
+
+DOWNLOAD_DIR = os.getenv("DOWNLOAD_DIR", "/tmp/downloads")
 os.makedirs(DOWNLOAD_DIR, exist_ok=True)
 
 def _classify_format(vcodec: str, acodec: str) -> str:
@@ -34,19 +39,31 @@ def _download(url: str, opts: dict):
         ydl.download([url])
 
 async def get_video_info(url: str):
+    logger.info(f"Fetching video info for YouTube URL: {url}")
     ydl_opts = {
-    "quiet": True,
-    "cookiefile": "cookies.txt",
-    "nocheckcertificate": True,
-    "geo_bypass": True,
-    "extractor_args": {
-        "youtube": {
-            "player_client": ["android"]
+        "quiet": True,
+        "nocheckcertificate": True,
+        "geo_bypass": True,
+        "extractor_args": {
+            "youtube": {
+                "player_client": ["android"]
+            }
         }
     }
-}
-    loop = asyncio.get_event_loop()
-    info = await loop.run_in_executor(None, _extract_info, url, ydl_opts)
+    
+    cookie_path = os.getenv("COOKIE_FILE_PATH", "cookies.txt")
+    if os.path.exists(cookie_path):
+        ydl_opts["cookiefile"] = cookie_path
+        logger.info(f"Using cookies file: {cookie_path}")
+    else:
+        logger.info("No cookies file found. Fetching info without cookies.")
+
+    try:
+        loop = asyncio.get_event_loop()
+        info = await loop.run_in_executor(None, _extract_info, url, ydl_opts)
+    except Exception as e:
+        logger.error(f"Failed to extract info for YouTube URL {url}: {e}", exc_info=True)
+        raise ValueError(f"Failed to fetch YouTube video details: {str(e)}")
     
     raw_formats = info.get("formats", [])
     formats = []
@@ -70,6 +87,7 @@ async def get_video_info(url: str):
     width = info.get("width") or 0
     height = info.get("height") or 0
     
+    logger.info(f"Successfully retrieved YouTube video info: {info.get('title', 'Unknown')}")
     return {
         "title": info.get("title", "Unknown"),
         "thumbnail": info.get("thumbnail", ""),
@@ -95,6 +113,8 @@ async def download_video(url: str, format_id: str = "best"):
         else "bestvideo+bestaudio/best"
     )
 
+    logger.info(f"YouTube download started: URL={url}, format={format_id}")
+    
     ydl_opts = {
         "format": format_str,
         "outtmpl": output_template,
@@ -102,7 +122,6 @@ async def download_video(url: str, format_id: str = "best"):
         "quiet": True,
         "no_warnings": True,
         "postprocessors": [{"key": "FFmpegVideoConvertor", "preferedformat": "mp4"}],
-        "cookiefile": "cookies.txt",
         "nocheckcertificate": True,
         "geo_bypass": True,
         "extractor_args": {
@@ -112,13 +131,28 @@ async def download_video(url: str, format_id: str = "best"):
         }
     }
 
-    loop = asyncio.get_event_loop()
-    await loop.run_in_executor(None, _download, url, ydl_opts)
-    
-    pattern = os.path.join(DOWNLOAD_DIR, f"{file_id}_*")
-    files = glob.glob(pattern)
-    if not files: return None, None
-    
-    filepath = files[0]
-    filename = os.path.basename(filepath).replace(f"{file_id}_", "", 1)
-    return filepath, filename
+    cookie_path = os.getenv("COOKIE_FILE_PATH", "cookies.txt")
+    if os.path.exists(cookie_path):
+        ydl_opts["cookiefile"] = cookie_path
+        logger.info(f"Using cookies file for download: {cookie_path}")
+    else:
+        logger.info("No cookies file found. Downloading without cookies.")
+
+    try:
+        loop = asyncio.get_event_loop()
+        await loop.run_in_executor(None, _download, url, ydl_opts)
+        
+        pattern = os.path.join(DOWNLOAD_DIR, f"{file_id}_*")
+        files = glob.glob(pattern)
+        if not files:
+            logger.error(f"No file found after YouTube download completion for URL: {url}")
+            return None, None
+        
+        filepath = files[0]
+        filename = os.path.basename(filepath).replace(f"{file_id}_", "", 1)
+        logger.info(f"YouTube download completed: URL={url}, Saved={filename}")
+        return filepath, filename
+    except Exception as e:
+        logger.error(f"YouTube download failed for URL={url}: {e}", exc_info=True)
+        raise ValueError(f"YouTube download failed: {str(e)}")
+
