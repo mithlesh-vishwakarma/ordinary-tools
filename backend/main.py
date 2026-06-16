@@ -150,10 +150,13 @@ async def startup_event():
             with open(cookies_file, "w", encoding="utf-8") as f:
                 f.write(youtube_cookies)
             logger.info("Youtube cookies loaded successfully")
+            logger.info("YouTube cookies: enabled")
         else:
             logger.info("No YouTube cookies configured")
+            logger.info("YouTube cookies: disabled")
     except Exception as e:
         logger.error(f"Failed to initialize YouTube cookies: {e}", exc_info=True)
+        logger.info("YouTube cookies: disabled")
 
     # Verify download directory
     try:
@@ -183,6 +186,14 @@ async def startup_event():
         raise RuntimeError("Startup check failed: missing ffmpeg dependency")
     else:
         logger.info(f"ffmpeg dependency verified. Location: {ffmpeg_path}")
+        # Get and log ffmpeg version
+        try:
+            import subprocess
+            res = subprocess.run([ffmpeg_path, "-version"], capture_output=True, text=True, check=True)
+            ffmpeg_version = res.stdout.splitlines()[0]
+            logger.info(f"ffmpeg version: {ffmpeg_version}")
+        except Exception as ex:
+            logger.warning(f"Could not retrieve ffmpeg version: {ex}")
 
     # Log startup success
     logger.info("All startup checks passed successfully. Starting scheduled cleanup task...")

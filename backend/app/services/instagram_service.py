@@ -5,11 +5,23 @@ import uuid
 import asyncio
 import glob
 import logging
+import shutil
+import subprocess
 from typing import Optional
 from dotenv import load_dotenv
 
 load_dotenv()
 logger = logging.getLogger("ordinary-tools-api.instagram")
+
+# Resolve ffmpeg version at startup
+FFMPEG_VERSION = "unknown"
+try:
+    ffmpeg_path = shutil.which("ffmpeg")
+    if ffmpeg_path:
+        res = subprocess.run([ffmpeg_path, "-version"], capture_output=True, text=True, check=True)
+        FFMPEG_VERSION = res.stdout.splitlines()[0]
+except Exception:
+    pass
 
 DOWNLOAD_DIR = os.getenv("DOWNLOAD_DIR", "/tmp/downloads")
 os.makedirs(DOWNLOAD_DIR, exist_ok=True)
@@ -65,6 +77,10 @@ async def get_instagram_info(url: str):
     
     cookie_path = "/tmp/cookies/youtube_cookies.txt"
     cookies_enabled = os.path.exists(cookie_path)
+    cookies_status = "enabled" if cookies_enabled else "disabled"
+    
+    logger.info(f"yt-dlp version: {yt_dlp.version.__version__} | ffmpeg version: {FFMPEG_VERSION} | YouTube cookies: {cookies_status}")
+
     if cookies_enabled:
         ydl_opts["cookiefile"] = cookie_path
         logger.info(f"Using cookies file: {cookie_path}")
@@ -79,7 +95,7 @@ async def get_instagram_info(url: str):
             f"Failed to extract info for Instagram URL: {url} | Error: {str(e)} | Cookies enabled: {cookies_enabled}",
             exc_info=True
         )
-        raise ValueError(f"Failed to fetch Instagram media details: {str(e)}")
+        raise ValueError("YouTube extraction failed")
     
     raw_formats = info.get("formats", [])
     formats = []
@@ -170,6 +186,10 @@ async def download_instagram(url: str, format_id: Optional[str] = None):
     
     cookie_path = "/tmp/cookies/youtube_cookies.txt"
     cookies_enabled = os.path.exists(cookie_path)
+    cookies_status = "enabled" if cookies_enabled else "disabled"
+    
+    logger.info(f"yt-dlp version: {yt_dlp.version.__version__} | ffmpeg version: {FFMPEG_VERSION} | YouTube cookies: {cookies_status}")
+
     if cookies_enabled:
         ydl_opts["cookiefile"] = cookie_path
         logger.info(f"Using cookies file for Instagram download: {cookie_path}")
@@ -195,5 +215,5 @@ async def download_instagram(url: str, format_id: Optional[str] = None):
             f"Instagram download failed for URL: {url} | Error: {str(e)} | Cookies enabled: {cookies_enabled}",
             exc_info=True
         )
-        raise ValueError(f"Instagram download failed: {str(e)}")
+        raise ValueError("YouTube extraction failed")
 
