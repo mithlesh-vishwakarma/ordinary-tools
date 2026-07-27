@@ -182,6 +182,18 @@ async def startup_event():
     # Verify ffmpeg dependency
     ffmpeg_path = shutil.which("ffmpeg")
     if not ffmpeg_path:
+        try:
+            import imageio_ffmpeg
+            ffmpeg_exe = imageio_ffmpeg.get_ffmpeg_exe()
+            if ffmpeg_exe and os.path.exists(ffmpeg_exe):
+                ffmpeg_dir = os.path.dirname(ffmpeg_exe)
+                os.environ["PATH"] = ffmpeg_dir + os.path.pathsep + os.environ.get("PATH", "")
+                ffmpeg_path = shutil.which("ffmpeg") or ffmpeg_exe
+                logger.info(f"Loaded ffmpeg from imageio_ffmpeg: {ffmpeg_exe}")
+        except Exception as ex:
+            logger.warning(f"Could not load imageio_ffmpeg fallback: {ex}")
+
+    if not ffmpeg_path:
         logger.critical("Critical: ffmpeg is not found in PATH! yt-dlp will fail to merge video and audio formats.")
         raise RuntimeError("Startup check failed: missing ffmpeg dependency")
     else:

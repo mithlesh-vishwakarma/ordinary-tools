@@ -13,9 +13,19 @@ logger = logging.getLogger("ordinary-tools-api.youtube")
 
 # Resolve ffmpeg version at startup
 FFMPEG_VERSION = "unknown"
+FFMPEG_PATH = None
 try:
     ffmpeg_path = shutil.which("ffmpeg")
+    if not ffmpeg_path:
+        import imageio_ffmpeg
+        ffmpeg_exe = imageio_ffmpeg.get_ffmpeg_exe()
+        if ffmpeg_exe and os.path.exists(ffmpeg_exe):
+            ffmpeg_dir = os.path.dirname(ffmpeg_exe)
+            os.environ["PATH"] = ffmpeg_dir + os.path.pathsep + os.environ.get("PATH", "")
+            ffmpeg_path = shutil.which("ffmpeg") or ffmpeg_exe
+
     if ffmpeg_path:
+        FFMPEG_PATH = ffmpeg_path
         res = subprocess.run([ffmpeg_path, "-version"], capture_output=True, text=True, check=True)
         FFMPEG_VERSION = res.stdout.splitlines()[0]
 except Exception:
@@ -63,7 +73,18 @@ async def get_video_info(url: str):
         "quiet": True,
         "no_warnings": True,
         "extract_flat": False,
+        "nocheckcertificate": True,
+        "geo_bypass": True,
+        "remote_components": ["ejs:github"],
+        "js_runtimes": {"node": {}},
+        "extractor_args": {
+            "youtube": {
+                "player_client": ["android_vr", "web_embedded", "android", "ios"]
+            }
+        }
     }
+    if FFMPEG_PATH:
+        ydl_opts["ffmpeg_location"] = FFMPEG_PATH
 
     if cookies_enabled:
         ydl_opts["cookiefile"] = cookie_path
@@ -76,28 +97,107 @@ async def get_video_info(url: str):
             f"Failed to extract info for YouTube URL: {url} | Error: {str(e)} | Cookies enabled: {cookies_enabled}",
             exc_info=True
         )
-        raise ValueError("YouTube extraction failed")
+        raise ValueError(f"YouTube extraction failed: {str(e)}")
     
     raw_formats = info.get("formats", [])
     formats_count = len(raw_formats)
-    logger.info(f"Available formats count: {formats_count}")
+    logger.info(f"Available raw formats count: {formats_count}")
 
-    formats = []
+    video_only_formats = []
+    audio_only_formats = []
+    native_combined_formats = []
+    seen_heights = set()
+
     for f in raw_formats:
         vcodec = f.get("vcodec") or "none"
         acodec = f.get("acodec") or "none"
         ftype = _classify_format(vcodec, acodec)
-        if ftype == "N/A": continue
-        formats.append({
-            "format_id": str(f.get("format_id", "")),
-            "ext": f.get("ext", ""),
-            "resolution": f.get("resolution") or f.get("format_note", "N/A"),
+        if ftype == "N/A":
+            continue
+
+        height = f.get("height") or 0
+        res = f.get("resolution")
+        if not res or res == "N/A":
+            if height:
+                res = f"{height}p"
+            elif vcodec == "none":
+                res = "Audio"
+            else:
+                res = f.get("format_note", "N/A")
+
+        fid = str(f.get("format_id", ""))
+        ext = f.get("ext", "")
+        filesize = f.get("filesize") or f.get("filesize_approx")
+        note = f.get("format_note", "")
+
+        item = {
+            "format_id": fid,
+            "ext": ext,
+            "resolution": res,
+            "height": height,
             "type": ftype,
             "vcodec": vcodec[:20],
             "acodec": acodec[:20],
-            "filesize": f.get("filesize") or f.get("filesize_approx"),
-            "note": f.get("format_note", ""),
-        })
+            "filesize": filesize,
+            "note": note,
+        }
+
+        if ftype == "Combined":
+            native_combined_formats.append(item)
+            if height:
+                seen_heights.add(height)
+        elif ftype == "Video Only":
+            item["format_id"] = f"{fid}_videoonly"
+            video_only_formats.append(item)
+        elif ftype == "Audio Only":
+            item["format_id"] = f"{fid}_audioonly"
+            item["resolution"] = note or f"{ext.upper()} Audio"
+            audio_only_formats.append(item)
+
+    # Sort video-only formats by height descending
+    video_only_formats.sort(key=lambda x: x["height"], reverse=True)
+
+    # Build Combined list: includes native combined + adaptive video streams paired with bestaudio
+    combined_formats = list(native_combined_formats)
+    
+    # Add high quality resolution options to Combined list from video_only_formats
+    best_by_height = {}
+    for vf in video_only_formats:
+        h = vf["height"]
+        if h > 0 and h not in best_by_height:
+            raw_fid = vf["format_id"].replace("_videoonly", "")
+            best_by_height[h] = {
+                "format_id": raw_fid,
+                "ext": "mp4",
+                "resolution": vf["resolution"],
+                "height": h,
+                "type": "Combined",
+                "vcodec": vf["vcodec"],
+                "acodec": "auto (merged)",
+                "filesize": vf["filesize"],
+                "note": f"{vf['resolution']} Video + Audio",
+            }
+
+    for h, cf in sorted(best_by_height.items(), reverse=True):
+        if h not in seen_heights:
+            combined_formats.append(cf)
+
+    # Sort combined formats by height descending
+    combined_formats.sort(key=lambda x: x["height"], reverse=True)
+
+    # Deduplicate video-only formats by height & ext for clean UX
+    unique_video_only = []
+    seen_v_keys = set()
+    for vf in video_only_formats:
+        v_key = (vf["height"], vf["ext"])
+        if v_key not in seen_v_keys:
+            seen_v_keys.add(v_key)
+            unique_video_only.append(vf)
+
+    # Sort audio-only by filesize descending
+    audio_only_formats.sort(key=lambda x: (x["filesize"] or 0), reverse=True)
+
+    formats = combined_formats + unique_video_only + audio_only_formats
     
     duration = info.get("duration") or 0
     width = info.get("width") or 0
@@ -135,7 +235,18 @@ async def download_video(url: str, format_id: str = "best"):
         "quiet": True,
         "no_warnings": True,
         "extract_flat": False,
+        "nocheckcertificate": True,
+        "geo_bypass": True,
+        "remote_components": ["ejs:github"],
+        "js_runtimes": {"node": {}},
+        "extractor_args": {
+            "youtube": {
+                "player_client": ["android_vr", "web_embedded", "android", "ios"]
+            }
+        }
     }
+    if FFMPEG_PATH:
+        ydl_opts_info["ffmpeg_location"] = FFMPEG_PATH
     if cookies_enabled:
         ydl_opts_info["cookiefile"] = cookie_path
 
@@ -147,7 +258,7 @@ async def download_video(url: str, format_id: str = "best"):
             f"Format discovery failed for URL: {url} | Error: {str(e)} | Cookies enabled: {cookies_enabled}",
             exc_info=True
         )
-        raise ValueError("YouTube extraction failed")
+        raise ValueError(f"YouTube extraction failed: {str(e)}")
 
     formats_list = info.get("formats", [])
     formats_count = len(formats_list)
@@ -178,11 +289,37 @@ async def download_video(url: str, format_id: str = "best"):
 
     # 2. Candidate format sequences
     format_options = []
-    if format_id != "best":
-        format_options.append(f"{format_id}+bestaudio[ext=m4a]/{format_id}/best")
-    format_options.append("bestvideo+bestaudio/best")
-    format_options.append("best")
-    format_options.append("worst")
+    is_audio_only = format_id.endswith("_audioonly")
+    is_video_only = format_id.endswith("_videoonly")
+
+    if is_audio_only:
+        raw_fid = format_id.replace("_audioonly", "")
+        format_options = [
+            f"{raw_fid}",
+            "bestaudio/best",
+            "ba",
+            "bestaudio",
+        ]
+    elif is_video_only:
+        raw_fid = format_id.replace("_videoonly", "")
+        format_options = [
+            f"{raw_fid}",
+            "bestvideo",
+            "bv",
+        ]
+    else:
+        # Combined (Video + Audio)
+        if format_id != "best":
+            format_options = [
+                f"{format_id}+bestaudio[ext=m4a]/{format_id}+bestaudio/{format_id}/best",
+                "bestvideo+bestaudio/best",
+                "best",
+            ]
+        else:
+            format_options = [
+                "bestvideo+bestaudio/best",
+                "best",
+            ]
 
     download_success = False
     last_error = None
@@ -194,18 +331,23 @@ async def download_video(url: str, format_id: str = "best"):
         ydl_opts = {
             "format": chosen_format,
             "outtmpl": output_template,
-            "merge_output_format": "mp4",
             "quiet": True,
             "no_warnings": True,
-            "postprocessors": [{"key": "FFmpegVideoConvertor", "preferedformat": "mp4"}],
             "nocheckcertificate": True,
             "geo_bypass": True,
+            "remote_components": ["ejs:github"],
+            "js_runtimes": {"node": {}},
             "extractor_args": {
                 "youtube": {
-                    "player_client": ["android"]
+                    "player_client": ["android_vr", "web_embedded", "android", "ios"]
                 }
             }
         }
+        if FFMPEG_PATH:
+            ydl_opts["ffmpeg_location"] = FFMPEG_PATH
+        if not is_audio_only and not is_video_only:
+            ydl_opts["merge_output_format"] = "mp4"
+            ydl_opts["postprocessors"] = [{"key": "FFmpegVideoConvertor", "preferedformat": "mp4"}]
         if cookies_enabled:
             ydl_opts["cookiefile"] = cookie_path
 

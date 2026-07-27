@@ -15,9 +15,19 @@ logger = logging.getLogger("ordinary-tools-api.instagram")
 
 # Resolve ffmpeg version at startup
 FFMPEG_VERSION = "unknown"
+FFMPEG_PATH = None
 try:
     ffmpeg_path = shutil.which("ffmpeg")
+    if not ffmpeg_path:
+        import imageio_ffmpeg
+        ffmpeg_exe = imageio_ffmpeg.get_ffmpeg_exe()
+        if ffmpeg_exe and os.path.exists(ffmpeg_exe):
+            ffmpeg_dir = os.path.dirname(ffmpeg_exe)
+            os.environ["PATH"] = ffmpeg_dir + os.path.pathsep + os.environ.get("PATH", "")
+            ffmpeg_path = shutil.which("ffmpeg") or ffmpeg_exe
+
     if ffmpeg_path:
+        FFMPEG_PATH = ffmpeg_path
         res = subprocess.run([ffmpeg_path, "-version"], capture_output=True, text=True, check=True)
         FFMPEG_VERSION = res.stdout.splitlines()[0]
 except Exception:
@@ -68,18 +78,15 @@ async def get_instagram_info(url: str):
         "quiet": True,
         "nocheckcertificate": True,
         "geo_bypass": True,
-        "extractor_args": {
-            "youtube": {
-                "player_client": ["android"]
-            }
-        }
     }
+    if FFMPEG_PATH:
+        ydl_opts["ffmpeg_location"] = FFMPEG_PATH
     
     cookie_path = "/tmp/cookies/youtube_cookies.txt"
     cookies_enabled = os.path.exists(cookie_path)
     cookies_status = "enabled" if cookies_enabled else "disabled"
     
-    logger.info(f"yt-dlp version: {yt_dlp.version.__version__} | ffmpeg version: {FFMPEG_VERSION} | YouTube cookies: {cookies_status}")
+    logger.info(f"yt-dlp version: {yt_dlp.version.__version__} | ffmpeg version: {FFMPEG_VERSION} | Instagram cookies: {cookies_status}")
 
     if cookies_enabled:
         ydl_opts["cookiefile"] = cookie_path
@@ -95,26 +102,62 @@ async def get_instagram_info(url: str):
             f"Failed to extract info for Instagram URL: {url} | Error: {str(e)} | Cookies enabled: {cookies_enabled}",
             exc_info=True
         )
-        raise ValueError("YouTube extraction failed")
+        raise ValueError(f"Instagram extraction failed: {str(e)}")
     
     raw_formats = info.get("formats", [])
-    formats = []
+    video_formats = []
+    audio_formats = []
+    combined_formats = []
+
     for f in raw_formats:
         vcodec = f.get("vcodec") or "none"
         acodec = f.get("acodec") or "none"
         ftype = _classify_format(vcodec, acodec)
-        if ftype == "N/A": continue
-        formats.append({
-            "format_id": str(f.get("format_id", "")),
-            "ext": f.get("ext", ""),
-            "resolution": f.get("resolution") or f.get("format_note") or "Original",
+        if ftype == "N/A":
+            continue
+
+        height = f.get("height") or 0
+        res = f.get("resolution")
+        if not res or res == "N/A":
+            if height:
+                res = f"{height}p"
+            elif vcodec == "none":
+                res = "Audio"
+            else:
+                res = f.get("format_note", "Original")
+
+        fid = str(f.get("format_id", ""))
+        ext = f.get("ext", "")
+        filesize = f.get("filesize") or f.get("filesize_approx")
+        note = f.get("format_note", "")
+
+        item = {
+            "format_id": fid,
+            "ext": ext,
+            "resolution": res,
+            "height": height,
             "type": ftype,
             "vcodec": vcodec[:20],
             "acodec": acodec[:20],
-            "filesize": f.get("filesize") or f.get("filesize_approx"),
-            "note": f.get("format_note", ""),
-        })
-        
+            "filesize": filesize,
+            "note": note,
+        }
+
+        if ftype == "Combined":
+            combined_formats.append(item)
+        elif ftype == "Video Only":
+            item["format_id"] = f"{fid}_videoonly"
+            video_formats.append(item)
+        elif ftype == "Audio Only":
+            item["format_id"] = f"{fid}_audioonly"
+            audio_formats.append(item)
+
+    combined_formats.sort(key=lambda x: (x["height"] or 0, x["filesize"] or 0), reverse=True)
+    video_formats.sort(key=lambda x: (x["height"] or 0, x["filesize"] or 0), reverse=True)
+    audio_formats.sort(key=lambda x: (x["filesize"] or 0), reverse=True)
+
+    formats = combined_formats + video_formats + audio_formats
+
     if not formats:
         formats.append({
             "format_id": "best",
@@ -177,18 +220,15 @@ async def download_instagram(url: str, format_id: Optional[str] = None):
         "no_warnings": True,
         "nocheckcertificate": True,
         "geo_bypass": True,
-        "extractor_args": {
-            "youtube": {
-                "player_client": ["android"]
-            }
-        }
     }
+    if FFMPEG_PATH:
+        ydl_opts["ffmpeg_location"] = FFMPEG_PATH
     
     cookie_path = "/tmp/cookies/youtube_cookies.txt"
     cookies_enabled = os.path.exists(cookie_path)
     cookies_status = "enabled" if cookies_enabled else "disabled"
     
-    logger.info(f"yt-dlp version: {yt_dlp.version.__version__} | ffmpeg version: {FFMPEG_VERSION} | YouTube cookies: {cookies_status}")
+    logger.info(f"yt-dlp version: {yt_dlp.version.__version__} | ffmpeg version: {FFMPEG_VERSION} | Instagram cookies: {cookies_status}")
 
     if cookies_enabled:
         ydl_opts["cookiefile"] = cookie_path
@@ -215,5 +255,5 @@ async def download_instagram(url: str, format_id: Optional[str] = None):
             f"Instagram download failed for URL: {url} | Error: {str(e)} | Cookies enabled: {cookies_enabled}",
             exc_info=True
         )
-        raise ValueError("YouTube extraction failed")
+        raise ValueError(f"Instagram download failed: {str(e)}")
 

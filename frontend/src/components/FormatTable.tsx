@@ -1,7 +1,7 @@
 import { useState, useMemo } from "react";
 import type { FormatInfo } from "../types";
 
-type FilterType = "all" | "Combined" | "Video Only" | "Audio Only";
+type FilterType = "Combined" | "Video Only" | "Audio Only";
 
 interface Props {
   formats: FormatInfo[];
@@ -33,6 +33,25 @@ function getBadgeClass(type: string): string {
   }
 }
 
+function parseResolutionHeight(resolution: string, note?: string): number {
+  const str = `${resolution} ${note || ""}`;
+  const dimMatch = str.match(/(\d{3,4})\s*[x×]\s*(\d{3,4})/i);
+  if (dimMatch) {
+    const h = parseInt(dimMatch[2], 10);
+    const w = parseInt(dimMatch[1], 10);
+    return Math.min(w, h);
+  }
+  const pMatch = str.match(/(\d{3,4})p/i);
+  if (pMatch) {
+    return parseInt(pMatch[1], 10);
+  }
+  const numMatch = str.match(/\b(\d{3,4})\b/);
+  if (numMatch) {
+    return parseInt(numMatch[1], 10);
+  }
+  return 0;
+}
+
 export default function FormatTable({
   formats,
   onDownload,
@@ -40,18 +59,33 @@ export default function FormatTable({
   downloadingFormatId,
   thumbnail,
 }: Props) {
-  const [filter, setFilter] = useState<FilterType>("all");
+  const [filter, setFilter] = useState<FilterType>("Combined");
 
   const filtered = useMemo(() => {
-    if (filter === "all") return formats;
-    return formats.filter((f) => f.type === filter);
+    let list = formats.filter((f) => f.type === filter);
+    if (list.length === 0) {
+      list = formats;
+    }
+
+    return [...list].sort((a, b) => {
+      if (filter === "Audio Only") {
+        return (b.filesize || 0) - (a.filesize || 0);
+      }
+
+      const hA = parseResolutionHeight(a.resolution, a.note);
+      const hB = parseResolutionHeight(b.resolution, b.note);
+      if (hA !== hB) {
+        return hB - hA; // Highest resolution first
+      }
+
+      return (b.filesize || 0) - (a.filesize || 0);
+    });
   }, [formats, filter]);
 
   const filters: { label: string; value: FilterType }[] = [
-    { label: "All", value: "all" },
-    { label: "Combined", value: "Combined" },
-    { label: "Video", value: "Video Only" },
-    { label: "Audio", value: "Audio Only" },
+    { label: "Video + Audio", value: "Combined" },
+    { label: "Video Only", value: "Video Only" },
+    { label: "Audio Only", value: "Audio Only" },
   ];
 
   return (
@@ -98,7 +132,6 @@ export default function FormatTable({
                 <th>Ext</th>
                 <th>Type</th>
                 <th>Size</th>
-                <th>Codecs</th>
                 <th></th>
               </tr>
             </thead>
@@ -130,10 +163,6 @@ export default function FormatTable({
                     <span className={getBadgeClass(f.type)}>{f.type}</span>
                   </td>
                   <td>{formatFileSize(f.filesize)}</td>
-                  <td style={{ fontSize: "0.78rem", color: "var(--text-muted)" }}>
-                    {f.vcodec !== "none" ? f.vcodec : "—"} /{" "}
-                    {f.acodec !== "none" ? f.acodec : "—"}
-                  </td>
                   <td>
                     <button
                       className="btn btn--download btn--small"
@@ -152,7 +181,7 @@ export default function FormatTable({
               ))}
               {filtered.length === 0 && (
                 <tr>
-                  <td colSpan={6} style={{ textAlign: "center", padding: 32 }}>
+                  <td colSpan={5} style={{ textAlign: "center", padding: 32 }}>
                     No formats match this filter.
                   </td>
                 </tr>
