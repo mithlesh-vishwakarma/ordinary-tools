@@ -7,6 +7,8 @@ import glob
 import logging
 import shutil
 import subprocess
+import time
+import copy
 from typing import Optional
 from dotenv import load_dotenv
 
@@ -35,6 +37,33 @@ except Exception:
 
 DOWNLOAD_DIR = os.getenv("DOWNLOAD_DIR", "/tmp/downloads")
 os.makedirs(DOWNLOAD_DIR, exist_ok=True)
+
+# ----------------------------------------------------
+# ALGORITHM: Short-Term TTL In-Memory Metadata Cache
+# Prevents redundant network extraction requests when
+# user requests media info and then downloads media.
+# ----------------------------------------------------
+INFO_CACHE = {}
+CACHE_TTL_SECONDS = 900  # 15 minutes TTL
+
+def get_cached_info(url: str):
+    now = time.time()
+    if url in INFO_CACHE:
+        info, timestamp = INFO_CACHE[url]
+        if now - timestamp < CACHE_TTL_SECONDS:
+            logger.info(f"⚡ Cache HIT for Instagram URL: {url}")
+            return info
+        else:
+            del INFO_CACHE[url]
+    return None
+
+def set_cached_info(url: str, info: dict):
+    now = time.time()
+    INFO_CACHE[url] = (info, now)
+    if len(INFO_CACHE) > 100:
+        stale_keys = [k for k, (i, ts) in INFO_CACHE.items() if now - ts > CACHE_TTL_SECONDS]
+        for k in stale_keys:
+            del INFO_CACHE[k]
 
 def get_shortcode(url: str) -> Optional[str]:
     pattern = r'/(?:p|reels|reel|tv)/([^/?#&]+)'
@@ -67,6 +96,11 @@ def _download(url: str, opts: dict):
     with yt_dlp.YoutubeDL(opts) as ydl:
         ydl.download([url])
 
+def _download_from_info(info_dict: dict, opts: dict):
+    info_copy = copy.deepcopy(info_dict)
+    with yt_dlp.YoutubeDL(opts) as ydl:
+        ydl.process_ie_result(info_copy, download=True)
+
 async def get_instagram_info(url: str):
     logger.info(f"Fetching media info for Instagram URL: {url}")
     shortcode = get_shortcode(url)
@@ -74,35 +108,38 @@ async def get_instagram_info(url: str):
         logger.warning(f"Invalid Instagram URL provided: {url}")
         raise ValueError("Invalid Instagram URL")
     
-    ydl_opts = {
-        "quiet": True,
-        "nocheckcertificate": True,
-        "geo_bypass": True,
-    }
-    if FFMPEG_PATH:
-        ydl_opts["ffmpeg_location"] = FFMPEG_PATH
-    
-    cookie_path = "/tmp/cookies/youtube_cookies.txt"
-    cookies_enabled = os.path.exists(cookie_path)
-    cookies_status = "enabled" if cookies_enabled else "disabled"
-    
-    logger.info(f"yt-dlp version: {yt_dlp.version.__version__} | ffmpeg version: {FFMPEG_VERSION} | Instagram cookies: {cookies_status}")
+    info = get_cached_info(url)
+    if not info:
+        ydl_opts = {
+            "quiet": True,
+            "nocheckcertificate": True,
+            "geo_bypass": True,
+        }
+        if FFMPEG_PATH:
+            ydl_opts["ffmpeg_location"] = FFMPEG_PATH
+        
+        cookie_path = "/tmp/cookies/youtube_cookies.txt"
+        cookies_enabled = os.path.exists(cookie_path)
+        cookies_status = "enabled" if cookies_enabled else "disabled"
+        
+        logger.info(f"yt-dlp version: {yt_dlp.version.__version__} | ffmpeg version: {FFMPEG_VERSION} | Instagram cookies: {cookies_status}")
 
-    if cookies_enabled:
-        ydl_opts["cookiefile"] = cookie_path
-        logger.info(f"Using cookies file: {cookie_path}")
-    else:
-        logger.info("No cookies file found. Fetching Instagram info without cookies.")
+        if cookies_enabled:
+            ydl_opts["cookiefile"] = cookie_path
+            logger.info(f"Using cookies file: {cookie_path}")
+        else:
+            logger.info("No cookies file found. Fetching Instagram info without cookies.")
 
-    try:
-        loop = asyncio.get_event_loop()
-        info = await loop.run_in_executor(None, _extract_info, url, ydl_opts)
-    except Exception as e:
-        logger.error(
-            f"Failed to extract info for Instagram URL: {url} | Error: {str(e)} | Cookies enabled: {cookies_enabled}",
-            exc_info=True
-        )
-        raise ValueError(f"Instagram extraction failed: {str(e)}")
+        try:
+            loop = asyncio.get_event_loop()
+            info = await loop.run_in_executor(None, _extract_info, url, ydl_opts)
+            set_cached_info(url, info)
+        except Exception as e:
+            logger.error(
+                f"Failed to extract info for Instagram URL: {url} | Error: {str(e)} | Cookies enabled: {cookies_enabled}",
+                exc_info=True
+            )
+            raise ValueError(f"Instagram extraction failed: {str(e)}")
     
     raw_formats = info.get("formats", [])
     video_formats = []
@@ -208,6 +245,32 @@ async def download_instagram(url: str, format_id: Optional[str] = None):
     file_id = uuid.uuid4().hex[:12]
     output_template = os.path.join(DOWNLOAD_DIR, f"{file_id}_%(title)s.%(ext)s")
     
+    cookie_path = "/tmp/cookies/youtube_cookies.txt"
+    cookies_enabled = os.path.exists(cookie_path)
+    cookies_status = "enabled" if cookies_enabled else "disabled"
+    
+    logger.info(f"yt-dlp version: {yt_dlp.version.__version__} | ffmpeg version: {FFMPEG_VERSION} | Instagram cookies: {cookies_status}")
+
+    # 1. Retrieve pre-extracted info from cache or fetch if missing
+    info = get_cached_info(url)
+    loop = asyncio.get_event_loop()
+    if not info:
+        info_opts = {
+            "quiet": True,
+            "nocheckcertificate": True,
+            "geo_bypass": True,
+        }
+        if FFMPEG_PATH:
+            info_opts["ffmpeg_location"] = FFMPEG_PATH
+        if cookies_enabled:
+            info_opts["cookiefile"] = cookie_path
+        try:
+            info = await loop.run_in_executor(None, _extract_info, url, info_opts)
+            set_cached_info(url, info)
+        except Exception as e:
+            logger.error(f"Instagram extraction failed for URL: {url} | Error: {str(e)}", exc_info=True)
+            raise ValueError(f"Instagram extraction failed: {str(e)}")
+
     if format_id and format_id not in ("best", "original"):
         format_str = f"{format_id}+bestaudio[ext=m4a]/{format_id}/best"
     else:
@@ -220,16 +283,15 @@ async def download_instagram(url: str, format_id: Optional[str] = None):
         "no_warnings": True,
         "nocheckcertificate": True,
         "geo_bypass": True,
+        "concurrent_fragment_downloads": 8,  # Multi-threaded parallel chunk downloads
+        "http_chunk_size": 10485760,         # 10MB chunk size for max socket throughput
+        "buffersize": 1048576,              # 1MB buffer
+        "retries": 10,
+        "fragment_retries": 10,
     }
     if FFMPEG_PATH:
         ydl_opts["ffmpeg_location"] = FFMPEG_PATH
     
-    cookie_path = "/tmp/cookies/youtube_cookies.txt"
-    cookies_enabled = os.path.exists(cookie_path)
-    cookies_status = "enabled" if cookies_enabled else "disabled"
-    
-    logger.info(f"yt-dlp version: {yt_dlp.version.__version__} | ffmpeg version: {FFMPEG_VERSION} | Instagram cookies: {cookies_status}")
-
     if cookies_enabled:
         ydl_opts["cookiefile"] = cookie_path
         logger.info(f"Using cookies file for Instagram download: {cookie_path}")
@@ -237,8 +299,12 @@ async def download_instagram(url: str, format_id: Optional[str] = None):
         logger.info("No cookies file found. Downloading Instagram media without cookies.")
     
     try:
-        loop = asyncio.get_event_loop()
-        await loop.run_in_executor(None, _download, url, ydl_opts)
+        try:
+            logger.info(f"⚡ Executing zero-extraction Instagram download using cached stream metadata...")
+            await loop.run_in_executor(None, _download_from_info, info, ydl_opts)
+        except Exception as fast_err:
+            logger.warning(f"Pre-resolved Instagram stream download issue: {fast_err}. Falling back to standard download.")
+            await loop.run_in_executor(None, _download, url, ydl_opts)
         
         pattern = os.path.join(DOWNLOAD_DIR, f"{file_id}_*")
         files = glob.glob(pattern)

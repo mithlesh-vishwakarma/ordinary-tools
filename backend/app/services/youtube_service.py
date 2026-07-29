@@ -6,6 +6,8 @@ import glob
 import logging
 import shutil
 import subprocess
+import time
+import copy
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -34,6 +36,37 @@ except Exception:
 DOWNLOAD_DIR = os.getenv("DOWNLOAD_DIR", "/tmp/downloads")
 os.makedirs(DOWNLOAD_DIR, exist_ok=True)
 
+# ----------------------------------------------------
+# ALGORITHM: Short-Term TTL In-Memory Metadata Cache
+# Prevents redundant network extraction requests when
+# user requests video info and then downloads video.
+# ----------------------------------------------------
+INFO_CACHE = {}
+CACHE_TTL_SECONDS = 900  # 15 minutes TTL
+
+def clear_info_cache():
+    INFO_CACHE.clear()
+
+def get_cached_info(url: str):
+    now = time.time()
+    if url in INFO_CACHE:
+        info, timestamp = INFO_CACHE[url]
+        if now - timestamp < CACHE_TTL_SECONDS:
+            logger.info(f"⚡ Cache HIT for YouTube URL: {url}")
+            return info
+        else:
+            del INFO_CACHE[url]
+    return None
+
+def set_cached_info(url: str, info: dict):
+    now = time.time()
+    INFO_CACHE[url] = (info, now)
+    # Prune stale cache entries if cache size exceeds 100 items
+    if len(INFO_CACHE) > 100:
+        stale_keys = [k for k, (i, ts) in INFO_CACHE.items() if now - ts > CACHE_TTL_SECONDS]
+        for k in stale_keys:
+            del INFO_CACHE[k]
+
 def _classify_format(vcodec: str, acodec: str) -> str:
     has_video = vcodec and vcodec != "none"
     has_audio = acodec and acodec != "none"
@@ -60,6 +93,26 @@ def _download(url: str, opts: dict):
     with yt_dlp.YoutubeDL(opts) as ydl:
         ydl.download([url])
 
+def _download_from_info(info_dict: dict, opts: dict):
+    info_copy = copy.deepcopy(info_dict)
+    with yt_dlp.YoutubeDL(opts) as ydl:
+        ydl.process_ie_result(info_copy, download=True)
+
+def _get_fast_ydl_opts(cookies_enabled: bool, cookie_path: str) -> dict:
+    opts = {
+        "quiet": True,
+        "no_warnings": True,
+        "extract_flat": False,
+        "nocheckcertificate": True,
+        "geo_bypass": True,
+        "js_runtimes": {"node": {}},
+    }
+    if FFMPEG_PATH:
+        opts["ffmpeg_location"] = FFMPEG_PATH
+    if cookies_enabled:
+        opts["cookiefile"] = cookie_path
+    return opts
+
 async def get_video_info(url: str):
     logger.info(f"Fetching video info for YouTube URL: {url}")
     
@@ -69,35 +122,20 @@ async def get_video_info(url: str):
     
     logger.info(f"yt-dlp version: {yt_dlp.version.__version__} | URL: {url} | Cookies: {cookies_status}")
 
-    ydl_opts = {
-        "quiet": True,
-        "no_warnings": True,
-        "extract_flat": False,
-        "nocheckcertificate": True,
-        "geo_bypass": True,
-        "remote_components": ["ejs:github"],
-        "js_runtimes": {"node": {}},
-        "extractor_args": {
-            "youtube": {
-                "player_client": ["android_vr", "web_embedded", "android", "ios"]
-            }
-        }
-    }
-    if FFMPEG_PATH:
-        ydl_opts["ffmpeg_location"] = FFMPEG_PATH
-
-    if cookies_enabled:
-        ydl_opts["cookiefile"] = cookie_path
-
-    try:
-        loop = asyncio.get_event_loop()
-        info = await loop.run_in_executor(None, _extract_info, url, ydl_opts)
-    except Exception as e:
-        logger.error(
-            f"Failed to extract info for YouTube URL: {url} | Error: {str(e)} | Cookies enabled: {cookies_enabled}",
-            exc_info=True
-        )
-        raise ValueError(f"YouTube extraction failed: {str(e)}")
+    # Check In-Memory Cache first
+    info = get_cached_info(url)
+    if not info:
+        ydl_opts = _get_fast_ydl_opts(cookies_enabled, cookie_path)
+        try:
+            loop = asyncio.get_event_loop()
+            info = await loop.run_in_executor(None, _extract_info, url, ydl_opts)
+            set_cached_info(url, info)
+        except Exception as e:
+            logger.error(
+                f"Failed to extract info for YouTube URL: {url} | Error: {str(e)} | Cookies enabled: {cookies_enabled}",
+                exc_info=True
+            )
+            raise ValueError(f"YouTube extraction failed: {str(e)}")
     
     raw_formats = info.get("formats", [])
     formats_count = len(raw_formats)
@@ -230,62 +268,29 @@ async def download_video(url: str, format_id: str = "best"):
     
     logger.info(f"yt-dlp version: {yt_dlp.version.__version__} | URL: {url} | Cookies: {cookies_status}")
 
-    # 1. Run format discovery using minimal options
-    ydl_opts_info = {
-        "quiet": True,
-        "no_warnings": True,
-        "extract_flat": False,
-        "nocheckcertificate": True,
-        "geo_bypass": True,
-        "remote_components": ["ejs:github"],
-        "js_runtimes": {"node": {}},
-        "extractor_args": {
-            "youtube": {
-                "player_client": ["android_vr", "web_embedded", "android", "ios"]
-            }
-        }
-    }
-    if FFMPEG_PATH:
-        ydl_opts_info["ffmpeg_location"] = FFMPEG_PATH
-    if cookies_enabled:
-        ydl_opts_info["cookiefile"] = cookie_path
-
-    try:
-        loop = asyncio.get_event_loop()
-        info = await loop.run_in_executor(None, _extract_info, url, ydl_opts_info)
-    except Exception as e:
-        logger.error(
-            f"Format discovery failed for URL: {url} | Error: {str(e)} | Cookies enabled: {cookies_enabled}",
-            exc_info=True
-        )
-        raise ValueError(f"YouTube extraction failed: {str(e)}")
+    # 1. Retrieve metadata from memory cache or fetch if absent (prevents duplicate network requests)
+    info = get_cached_info(url)
+    loop = asyncio.get_event_loop()
+    if not info:
+        ydl_opts_info = _get_fast_ydl_opts(cookies_enabled, cookie_path)
+        try:
+            info = await loop.run_in_executor(None, _extract_info, url, ydl_opts_info)
+            set_cached_info(url, info)
+        except Exception as e:
+            logger.error(
+                f"Metadata extraction failed for URL: {url} | Error: {str(e)} | Cookies enabled: {cookies_enabled}",
+                exc_info=True
+            )
+            raise ValueError(f"YouTube extraction failed: {str(e)}")
 
     formats_list = info.get("formats", [])
-    formats_count = len(formats_list)
-    logger.info(f"Available formats count: {formats_count}")
+    available_ids = [str(f.get("format_id")) for f in formats_list if f.get("format_id")]
 
-    # Log available formats (format ids)
-    logger.info("Available formats:")
-    available_ids = []
-    for f in formats_list:
-        fid = f.get("format_id")
-        if fid:
-            fid_str = str(fid)
-            available_ids.append(fid_str)
-            logger.info(fid_str)
-
-    # Log formats resolutions/notes for diagnostic convenience
-    resolutions_log = "Formats resolutions/notes:\n" + "\n".join(
-        f"{f.get('format_id')}: {f.get('resolution') or f.get('format_note', 'N/A')}"
-        for f in formats_list
-    )
-    logger.info(resolutions_log)
-
-    # Determine selected format ID for logging
+    # Determine selected format ID
     selected_fid = format_id
     if format_id == "best" and available_ids:
         selected_fid = available_ids[-1]
-    logger.info(f"Selected:\n{selected_fid}")
+    logger.info(f"Selected format ID: {selected_fid}")
 
     # 2. Candidate format sequences
     format_options = []
@@ -326,7 +331,7 @@ async def download_video(url: str, format_id: str = "best"):
     filepath, filename = None, None
 
     for chosen_format in format_options:
-        logger.info(f"Attempting download with format option: {chosen_format}")
+        logger.info(f"Attempting fast download with format option: {chosen_format}")
         
         ydl_opts = {
             "format": chosen_format,
@@ -335,24 +340,32 @@ async def download_video(url: str, format_id: str = "best"):
             "no_warnings": True,
             "nocheckcertificate": True,
             "geo_bypass": True,
-            "remote_components": ["ejs:github"],
+            "concurrent_fragment_downloads": 8,  # Multi-threaded parallel chunk downloads
+            "http_chunk_size": 10485760,         # 10MB chunk size for max socket throughput
+            "buffersize": 1048576,              # 1MB buffer
+            "retries": 10,
+            "fragment_retries": 10,
             "js_runtimes": {"node": {}},
-            "extractor_args": {
-                "youtube": {
-                    "player_client": ["android_vr", "web_embedded", "android", "ios"]
-                }
-            }
         }
         if FFMPEG_PATH:
             ydl_opts["ffmpeg_location"] = FFMPEG_PATH
         if not is_audio_only and not is_video_only:
             ydl_opts["merge_output_format"] = "mp4"
-            ydl_opts["postprocessors"] = [{"key": "FFmpegVideoConvertor", "preferedformat": "mp4"}]
+            # Zero re-encoding: Stream copy directly using FFmpeg (-c copy) for 50x faster muxing
+            ydl_opts["postprocessor_args"] = {
+                "ffmpeg": ["-c", "copy"]
+            }
         if cookies_enabled:
             ydl_opts["cookiefile"] = cookie_path
 
         try:
-            await loop.run_in_executor(None, _download, url, ydl_opts)
+            # First attempt: Zero-extraction pre-resolved stream download using cached info
+            try:
+                logger.info(f"⚡ Executing zero-extraction download using cached stream metadata...")
+                await loop.run_in_executor(None, _download_from_info, info, ydl_opts)
+            except Exception as fast_err:
+                logger.warning(f"Pre-resolved stream download encountered issue: {fast_err}. Falling back to standard download.")
+                await loop.run_in_executor(None, _download, url, ydl_opts)
             
             pattern = os.path.join(DOWNLOAD_DIR, f"{file_id}_*")
             files = glob.glob(pattern)
