@@ -11,13 +11,6 @@ import os
 import subprocess
 
 def auto_activate_venv():
-    # If uvicorn is not in the current python environment, check for .venv/venv
-    try:
-        import uvicorn
-        return
-    except ImportError:
-        pass
-
     backend_dir = os.path.dirname(os.path.abspath(__file__))
     possible_venvs = [
         os.path.join(backend_dir, ".venv", "Scripts", "python.exe"),
@@ -28,9 +21,11 @@ def auto_activate_venv():
     ]
 
     for venv_python in possible_venvs:
-        if os.path.exists(venv_python) and os.path.abspath(venv_python) != os.path.abspath(sys.executable):
-            cmd = [venv_python, os.path.abspath(__file__)] + sys.argv[1:]
-            sys.exit(subprocess.call(cmd))
+        if os.path.exists(venv_python):
+            if os.path.abspath(venv_python).lower() != os.path.abspath(sys.executable).lower():
+                cmd = [venv_python, os.path.abspath(__file__)] + sys.argv[1:]
+                sys.exit(subprocess.call(cmd))
+            return
 
 def main():
     auto_activate_venv()

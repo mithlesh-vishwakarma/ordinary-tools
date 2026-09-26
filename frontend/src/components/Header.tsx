@@ -13,7 +13,7 @@ export default function Header({
         <nav className="header__nav">
           <div className="header__left">
             <Link 
-              to="/tools" 
+              to="/" 
               className="header__brand" 
               style={{ cursor: 'pointer', textDecoration: 'none' }}
             >
@@ -31,9 +31,9 @@ export default function Header({
           </div>
 
           <div className="header__right">
-            <button className="btn btn--primary btn--small">
-              LogIn / SignUp
-            </button>
+            <Link to="/tools" className="btn btn--primary btn--small">
+              Explore Tools
+            </Link>
           </div>
         </nav>
       </div>
