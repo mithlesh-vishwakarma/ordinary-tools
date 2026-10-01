@@ -5,7 +5,7 @@ import react from '@vitejs/plugin-react'
 export default defineConfig(({ mode }) => {
   // Load environment variables. Empty prefix parameter lets us load NEXT_PUBLIC_ values.
   const env = loadEnv(mode, process.cwd(), '');
-  const apiUrl = env.NEXT_PUBLIC_API_URL || env.VITE_API_URL || '';
+  const apiUrl = (env.NEXT_PUBLIC_API_URL || env.VITE_API_URL || '').replace(/\/+$/, '');
 
   return {
     plugins: [react()],

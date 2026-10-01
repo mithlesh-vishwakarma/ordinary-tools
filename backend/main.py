@@ -36,27 +36,43 @@ app = FastAPI(
 )
 
 # CORS configuration
-frontend_url = os.getenv("FRONTEND_URL", "https://ordinary-tools.vercel.app")
-allowed_origins = [
+frontend_url = os.getenv("FRONTEND_URL", "https://tools.ordinarycoder.com")
+base_origins = [
     frontend_url,
+    "https://tools.ordinarycoder.com",
+    "http://tools.ordinarycoder.com",
+    "https://ordinarycoder.com",
+    "http://ordinarycoder.com",
+    "https://www.ordinarycoder.com",
+    "http://www.ordinarycoder.com",
     "https://ordinary-tools.vercel.app",
     "https://www.ordinary-tools.vercel.app",
     "http://localhost:5173",
     "http://127.0.0.1:5173",
+    "http://localhost:3000",
+    "http://127.0.0.1:3000",
 ]
+allowed_origins = []
+for origin in base_origins:
+    normalized = origin.strip().rstrip("/")
+    if normalized and normalized not in allowed_origins:
+        allowed_origins.append(normalized)
+
 additional_origins_str = os.getenv("ALLOWED_ORIGINS", "")
 if additional_origins_str:
     for origin in additional_origins_str.split(","):
-        origin = origin.strip()
-        if origin and origin not in allowed_origins:
-            allowed_origins.append(origin)
+        normalized = origin.strip().rstrip("/")
+        if normalized and normalized not in allowed_origins:
+            allowed_origins.append(normalized)
 
 app.add_middleware(
     CORSMiddleware,
     allow_origins=allowed_origins,
+    allow_origin_regex=r"https?://([a-zA-Z0-9-]+\.)*(ordinarycoder\.com|vercel\.app)(:[0-9]+)?$",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
+    expose_headers=["Content-Disposition", "Content-Length"],
 )
 
 # Request logging middleware

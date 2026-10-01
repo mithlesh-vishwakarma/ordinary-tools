@@ -1,8 +1,12 @@
 import type { VideoInfo } from "../types";
 
-// Update to use process.env.NEXT_PUBLIC_API_URL per requirements.
+// Update to use process.env.NEXT_PUBLIC_API_URL per requirements with VITE_API_URL fallback.
 // Vite will replace this token at build/run time.
-const API = process.env.NEXT_PUBLIC_API_URL || "";
+const rawApi =
+  (typeof process !== "undefined" && process.env && process.env.NEXT_PUBLIC_API_URL) ||
+  (import.meta.env && import.meta.env.VITE_API_URL) ||
+  "";
+const API = rawApi.replace(/\/+$/, "");
 const API_BASE = `${API}/api`;
 
 /**
