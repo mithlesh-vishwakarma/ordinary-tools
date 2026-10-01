@@ -20,3 +20,10 @@ node_modules/
 # Other
 *.DS_Store
 Thumbs.db
+
+# Environment variables
+.env
+.env.*
+*.env
+backend/.env*
+frontend/.env*
