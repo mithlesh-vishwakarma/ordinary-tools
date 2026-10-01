@@ -187,7 +187,7 @@ export async function exportPdfDocument(
 
   const blob = await res.blob();
   const disposition = res.headers.get('content-disposition');
-  let filename = file.name.replace(/\.pdf$/i, '') + '-edited.pdf';
+  let filename = file.name.replace(/\.pdf$/i, '') + '-ordinary-tools-edited.pdf';
   if (disposition) {
     const match = disposition.match(/filename\*?=(?:UTF-8''|"?)([^";]+)/i);
     if (match) filename = decodeURIComponent(match[1].replace(/"/g, ''));

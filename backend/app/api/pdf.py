@@ -24,7 +24,9 @@ async def export_pdf(
 
     output_pdf_bytes = process_pdf_operations(pdf_bytes, ops_list, rotations_dict)
 
-    filename = "ordinarycoder-edited.pdf"
+    orig_name = file.filename or "document.pdf"
+    base_name = orig_name[:-4] if orig_name.lower().endswith(".pdf") else orig_name
+    filename = f"{base_name}-ordinary-tools-edited.pdf"
     return Response(
       content=output_pdf_bytes,
       media_type="application/pdf",
