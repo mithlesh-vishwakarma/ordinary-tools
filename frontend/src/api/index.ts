@@ -37,7 +37,7 @@ async function fetchWithTimeout(
 
 export async function fetchMediaInfo(url: string, type: 'youtube' | 'instagram'): Promise<VideoInfo> {
   const endpoint = type === 'youtube' ? '/youtube/info' : '/instagram/info';
-  
+
   let res;
   try {
     res = await fetchWithTimeout(`${API_BASE}${endpoint}`, {
@@ -75,7 +75,7 @@ export async function downloadMedia(
   onProgress?: (loaded: number, total: number) => void
 ): Promise<{ blob: Blob; filename: string }> {
   const endpoint = type === 'youtube' ? '/youtube/download' : '/instagram/download';
-  
+
   let res;
   try {
     res = await fetchWithTimeout(`${API_BASE}${endpoint}`, {
@@ -148,4 +148,47 @@ export function triggerBrowserDownload(blob: Blob, filename: string) {
   document.body.removeChild(a);
   URL.revokeObjectURL(url);
 }
+
+export async function exportPdfDocument(
+  file: File,
+  operations: any[],
+  pageRotations: Record<number, number> = {}
+): Promise<{ blob: Blob; filename: string }> {
+  const formData = new FormData();
+  formData.append('file', file);
+  formData.append('operations', JSON.stringify(operations));
+  formData.append('page_rotations', JSON.stringify(pageRotations));
+
+  let res: Response;
+  try {
+    res = await fetchWithTimeout(`${API_BASE}/pdf/export`, {
+      method: 'POST',
+      body: formData,
+      timeout: 120000, // 2 minutes for PDF rendering
+    });
+  } catch (err: any) {
+    throw new Error(err.message || 'Failed to connect to PDF export service.');
+  }
+
+  if (!res.ok) {
+    let errDetail = 'Failed to export PDF';
+    try {
+      const err = await res.json();
+      errDetail = err.detail || err.error || `HTTP ${res.status}`;
+    } catch {
+      errDetail = `HTTP Error ${res.status}`;
+    }
+    throw new Error(errDetail);
+  }
+
+  const blob = await res.blob();
+  const disposition = res.headers.get('content-disposition');
+  let filename = file.name.replace(/\.pdf$/i, '') + '-edited.pdf';
+  if (disposition) {
+    const match = disposition.match(/filename\*?=(?:UTF-8''|"?)([^";]+)/i);
+    if (match) filename = decodeURIComponent(match[1].replace(/"/g, ''));
+  }
+  return { blob, filename };
+}
+
 

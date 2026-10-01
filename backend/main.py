@@ -16,6 +16,7 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from app.api.youtube import router as youtube_router
 from app.api.instagram import router as instagram_router
+from app.api.pdf import router as pdf_router
 from app.core.cleanup import cleanup_old_files
 
 # Setup logging
@@ -213,6 +214,7 @@ async def startup_event():
 
 app.include_router(youtube_router, prefix="/api")
 app.include_router(instagram_router, prefix="/api")
+app.include_router(pdf_router, prefix="/api")
 
 if __name__ == "__main__":
     import uvicorn

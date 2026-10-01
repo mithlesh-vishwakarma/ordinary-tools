@@ -1,0 +1,6 @@
+User-agent: *
+Allow: /
+Allow: /logo.png
+Allow: /favicon.png
+
+Sitemap: https://ordinarytools.com/sitemap.xml

@@ -1,8 +1,12 @@
 import { useEffect } from "react";
-import { Routes, Route, useNavigate, Navigate, useLocation } from "react-router-dom";
-import Home from "./pages/Home";
+import { Routes, Route, useNavigate, useLocation } from "react-router-dom";
+import LandingPage from "./pages/LandingPage";
+import ToolsHub from "./pages/ToolsHub";
+import VideoDownloaderHub from "./pages/VideoDownloaderHub";
+import PdfEditor from "./pages/pdf-editor";
 import YoutubeDownloader from "./pages/YoutubeDownloader";
 import InstagramDownloader from "./pages/InstagramDownloader";
+import PasswordGenerator from "./pages/PasswordGenerator";
 import UnderConstruction from "./pages/UnderConstruction";
 import Footer from "./components/Footer";
 
@@ -17,40 +21,57 @@ function ScrollToTop() {
 export default function App() {
   const navigate = useNavigate();
 
-  const onSelectTool = (tool: 'youtube' | 'instagram') => {
-    navigate(`/${tool}`);
-  };
-
   return (
     <>
       <ScrollToTop />
       <main style={{ flex: 1 }}>
         <Routes>
-          <Route path="/" element={<Navigate to="/tools" replace />} />
+          {/* Landing Page is now at root `/` */}
+          <Route path="/" element={<LandingPage />} />
+
+          {/* Tools Directory */}
+          <Route path="/tools" element={<ToolsHub />} />
+
+          {/* Subtool: Video Downloader Hub & Channels */}
           <Route 
-            path="/tools" 
-            element={<Home onSelect={onSelectTool} />} 
+            path="/tools/video-downloader" 
+            element={<VideoDownloaderHub />} 
           />
           <Route 
             path="/youtube" 
-            element={<YoutubeDownloader onBack={() => navigate("/tools")} />} 
+            element={<YoutubeDownloader onBack={() => navigate("/tools/video-downloader")} />} 
           />
           <Route 
             path="/instagram" 
-            element={<InstagramDownloader onBack={() => navigate("/tools")} />} 
+            element={<InstagramDownloader onBack={() => navigate("/tools/video-downloader")} />} 
+          />
+
+          {/* Subtool: PDF Editor */}
+          <Route 
+            path="/tools/pdf-editor" 
+            element={<PdfEditor />} 
           />
           <Route 
-            path="/coming-soon" 
-            element={<UnderConstruction onBack={() => navigate("/tools")} />} 
+            path="/pdf-editor" 
+            element={<PdfEditor />} 
+          />
+
+          {/* Utility Tools */}
+          <Route 
+            path="/password-generator" 
+            element={<PasswordGenerator />} 
           />
           <Route 
             path="/mocks" 
             element={<UnderConstruction onBack={() => navigate("/tools")} />} 
           />
           <Route 
-            path="/password-generator" 
+            path="/coming-soon" 
             element={<UnderConstruction onBack={() => navigate("/tools")} />} 
           />
+
+          {/* Fallback */}
+          <Route path="*" element={<LandingPage />} />
         </Routes>
       </main>
 
