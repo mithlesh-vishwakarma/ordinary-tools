@@ -1,11 +1,15 @@
 export type ObjectType = 
   | 'text' 
+  | 'whiteout'
   | 'image' 
   | 'signature' 
   | 'rectangle' 
+  | 'rounded-rect'
   | 'circle' 
   | 'line' 
   | 'arrow' 
+  | 'triangle'
+  | 'star'
   | 'drawing' 
   | 'highlight' 
   | 'watermark' 
@@ -45,7 +49,7 @@ export interface ImageObject extends BaseEditorObject {
 }
 
 export interface ShapeObject extends BaseEditorObject {
-  type: 'rectangle' | 'circle' | 'line' | 'arrow';
+  type: 'rectangle' | 'rounded-rect' | 'circle' | 'line' | 'arrow' | 'triangle' | 'star';
   strokeColor: string;
   strokeWidth: number;
   fillColor?: string;
@@ -71,6 +75,7 @@ export interface SignatureObject extends BaseEditorObject {
 export interface WatermarkObject extends BaseEditorObject {
   type: 'watermark';
   text: string;
+  fontFamily?: string;
   fontSize: number;
   color: string;
   isDiagonal?: boolean;
@@ -81,8 +86,14 @@ export interface RedactionObject extends BaseEditorObject {
   fillColor: string;
 }
 
+export interface WhiteoutObject extends BaseEditorObject {
+  type: 'whiteout';
+  fillColor: string;
+}
+
 export type EditorObject = 
   | TextObject 
+  | WhiteoutObject
   | ImageObject 
   | ShapeObject 
   | DrawingObject 

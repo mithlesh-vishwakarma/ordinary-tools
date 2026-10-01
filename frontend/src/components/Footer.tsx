@@ -3,13 +3,14 @@ export default function Footer() {
     <footer className="footer" id="footer">
       <div className="container">
         <p className="footer__text">
-          Built with React, TypeScript & FastAPI — Powered by{" "}
+          Built with <span className="footer-heart" aria-label="love">❤️</span>, Powered by{" "}
           <a
-            href="https://github.com/yt-dlp/yt-dlp"
+            href="https://ordinarycoder.com"
             target="_blank"
             rel="noopener noreferrer"
+            className="footer-link"
           >
-            yt-dlp
+            Ordinary Coder
           </a>
         </p>
       </div>

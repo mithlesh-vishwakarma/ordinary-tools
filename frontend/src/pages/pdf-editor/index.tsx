@@ -6,8 +6,11 @@ import PdfWorkspace from '../../components/pdf-editor/PdfWorkspace';
 import type { ToolType } from '../../components/pdf-editor/PdfWorkspace';
 import PdfViewer from '../../components/pdf-editor/PdfViewer';
 import PdfOverlayCanvas from '../../components/pdf-editor/PdfOverlayCanvas';
+import SignatureModal from '../../components/pdf-editor/SignatureModal';
 import { loadPdfDocument, cancelAllCanvasRenders, type PdfDoc } from '../../components/pdf-editor/pdfRenderer';
-import type { EditorObject } from '../../components/pdf-editor/types';
+import type { EditorObject, SignatureObject, ImageObject } from '../../components/pdf-editor/types';
+import { extractFontsFromPdf, type DocumentFontItem } from '../../components/pdf-editor/fontExtractor';
+import { exportPdfDocument, triggerBrowserDownload } from '../../api';
 
 export default function PdfEditorPage() {
   const [file, setFile] = useState<File | null>(null);
@@ -18,6 +21,7 @@ export default function PdfEditorPage() {
   const [zoom, setZoom] = useState<number>(100);
   const [activeTool, setActiveTool] = useState<ToolType>('select');
   const [isLoading, setIsLoading] = useState<boolean>(false);
+  const [isExporting, setIsExporting] = useState<boolean>(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   // Editor Objects & Selection State
@@ -25,11 +29,18 @@ export default function PdfEditorPage() {
   const [selectedObjectId, setSelectedObjectId] = useState<string | null>(null);
   const [pageDims, setPageDims] = useState<{ width: number; height: number }>({ width: 595, height: 842 });
 
+  // Signature Modal
+  const [isSignatureModalOpen, setIsSignatureModalOpen] = useState<boolean>(false);
+
+  // Document Fonts Extracted from uploaded PDF
+  const [documentFonts, setDocumentFonts] = useState<DocumentFontItem[]>([]);
+
   // Undo / Redo History Stack
   const [history, setHistory] = useState<EditorObject[][]>([[]]);
   const [historyIndex, setHistoryIndex] = useState<number>(0);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const imageInputRef = useRef<HTMLInputElement>(null);
 
   const pushToHistory = (newObjects: EditorObject[]) => {
     const updatedHistory = history.slice(0, historyIndex + 1);
@@ -54,7 +65,7 @@ export default function PdfEditorPage() {
     }
   }, [history, historyIndex]);
 
-  // Keyboard shortcuts (Ctrl+Z, Ctrl+Y, Ctrl+D)
+  // Keyboard shortcuts (Ctrl+Z, Ctrl+Y)
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if ((e.ctrlKey || e.metaKey) && e.key === 'z') {
@@ -87,19 +98,16 @@ export default function PdfEditorPage() {
       return;
     }
 
-    // 1. Automatically cancel all existing canvas render operations across the app
     cancelAllCanvasRenders();
 
-    // 2. Destroy previous PDF document if open to release memory & worker threads
     if (pdfDoc) {
       try {
-        pdfDoc.destroy();
+        (pdfDoc as any).destroy?.();
       } catch {
         // ignore
       }
     }
 
-    // 3. Clear previous doc state and generate a fresh document session ID
     setPdfDoc(null);
     setTotalPages(0);
     setIsLoading(true);
@@ -118,6 +126,13 @@ export default function PdfEditorPage() {
       setHistory([[]]);
       setHistoryIndex(0);
       setSelectedObjectId(null);
+
+      // Extract fonts from document for font-family dropdown
+      extractFontsFromPdf(buffer, doc).then((fonts) => {
+        setDocumentFonts(fonts);
+      }).catch((err) => {
+        console.warn('Font extraction failed:', err);
+      });
     } catch (err: unknown) {
       console.error('Failed to load PDF document:', err);
       const message = err instanceof Error ? err.message : 'The document could not be read or is encrypted.';
@@ -133,8 +148,78 @@ export default function PdfEditorPage() {
     if (e.target.files && e.target.files.length > 0) {
       processUploadedFile(e.target.files[0]);
     }
-    // Reset input value so selecting the same file again triggers onChange reliably
     e.target.value = '';
+  };
+
+  // Image Upload handler
+  const handleImageInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const uploaded = e.target.files?.[0];
+    if (!uploaded) return;
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const src = event.target?.result as string;
+      if (!src) return;
+
+      const img = new Image();
+      img.onload = () => {
+        const aspect = img.width / (img.height || 1);
+        const w = 180;
+        const h = w / aspect;
+        const newImg: ImageObject = {
+          id: `image-${Date.now()}`,
+          type: 'image',
+          page: currentPage,
+          x: 100,
+          y: 100,
+          width: w,
+          height: h,
+          rotation: 0,
+          opacity: 1,
+          src,
+          aspectRatio: aspect,
+        };
+        handleAddObject(newImg);
+        setSelectedObjectId(newImg.id);
+        setActiveTool('select');
+      };
+      img.src = src;
+    };
+    reader.readAsDataURL(uploaded);
+    e.target.value = '';
+  };
+
+  // Tool Selection Interceptor
+  const handleSelectTool = (tool: ToolType) => {
+    if (tool === 'signature') {
+      setIsSignatureModalOpen(true);
+      return;
+    }
+    if (tool === 'image') {
+      imageInputRef.current?.click();
+      return;
+    }
+    setActiveTool(tool);
+  };
+
+  // Save Signature handler
+  const handleSaveSignature = (signatureDataUrl: string) => {
+    const newSignature: SignatureObject = {
+      id: `sig-${Date.now()}`,
+      type: 'signature',
+      page: currentPage,
+      x: 120,
+      y: 160,
+      width: 180,
+      height: 70,
+      rotation: 0,
+      opacity: 1,
+      signatureDataUrl,
+    };
+    handleAddObject(newSignature);
+    setSelectedObjectId(newSignature.id);
+    setActiveTool('select');
+    setIsSignatureModalOpen(false);
   };
 
   const handleZoomIn = () => setZoom(prev => Math.min(prev + 25, 300));
@@ -186,13 +271,30 @@ export default function PdfEditorPage() {
     pushToHistory(updated);
   };
 
+  // Export PDF Document
+  const handleExport = async () => {
+    if (!file) return;
+
+    setIsExporting(true);
+    try {
+      const { blob, filename } = await exportPdfDocument(file, objects, {});
+      triggerBrowserDownload(blob, filename);
+    } catch (err: unknown) {
+      console.error('PDF Export Error:', err);
+      const message = err instanceof Error ? err.message : 'Unknown export error';
+      alert(`Export Failed: ${message}`);
+    } finally {
+      setIsExporting(false);
+    }
+  };
+
   const selectedObject = objects.find(o => o.id === selectedObjectId) || null;
   const canUndo = historyIndex > 0;
   const canRedo = historyIndex < history.length - 1;
 
   return (
     <div className="pdf-editor-module-page animate-fade-in-up">
-      <Header tagline="PDF EDITOR & ANNOTATION SUITE" />
+      <Header tagline="Powerful Tools for Everyday Work" />
 
       <div className="container editor-container">
         {/* Navigation Breadcrumb */}
@@ -204,13 +306,22 @@ export default function PdfEditorPage() {
           <span className="breadcrumb-current">PDF Editor</span>
         </div>
 
-        {/* Hidden File Input */}
+        {/* Hidden File Input for PDF */}
         <input 
           ref={fileInputRef}
           type="file" 
           accept="application/pdf" 
           style={{ display: 'none' }}
           onChange={handleFileInputChange}
+        />
+
+        {/* Hidden File Input for Image Attachment */}
+        <input 
+          ref={imageInputRef}
+          type="file" 
+          accept="image/png, image/jpeg, image/webp, image/svg+xml" 
+          style={{ display: 'none' }}
+          onChange={handleImageInputChange}
         />
 
         {/* Top Action Toolbar */}
@@ -221,6 +332,7 @@ export default function PdfEditorPage() {
           zoom={zoom}
           canUndo={canUndo}
           canRedo={canRedo}
+          isExporting={isExporting}
           onPrevPage={handlePrevPage}
           onNextPage={handleNextPage}
           onZoomIn={handleZoomIn}
@@ -228,7 +340,7 @@ export default function PdfEditorPage() {
           onFitWidth={handleFitWidth}
           onUndo={handleUndo}
           onRedo={handleRedo}
-          onExport={() => {}}
+          onExport={handleExport}
           onUploadNew={() => fileInputRef.current?.click()}
         />
 
@@ -236,13 +348,14 @@ export default function PdfEditorPage() {
         <PdfWorkspace
           docId={docId}
           activeTool={activeTool}
-          onSelectTool={setActiveTool}
+          onSelectTool={handleSelectTool}
           currentPage={currentPage}
           totalPages={totalPages}
           pdfDoc={pdfDoc}
           isLoading={isLoading}
           errorMessage={errorMessage}
           selectedObject={selectedObject}
+          documentFonts={documentFonts}
           onUploadClick={() => fileInputRef.current?.click()}
           onFileDrop={processUploadedFile}
           onPageChange={handlePageSelect}
@@ -279,6 +392,13 @@ export default function PdfEditorPage() {
           )}
         </PdfWorkspace>
       </div>
+
+      {/* Signature Modal */}
+      <SignatureModal
+        isOpen={isSignatureModalOpen}
+        onClose={() => setIsSignatureModalOpen(false)}
+        onSave={handleSaveSignature}
+      />
     </div>
   );
 }

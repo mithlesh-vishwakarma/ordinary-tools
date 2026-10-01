@@ -312,7 +312,7 @@ export default function PdfEditor() {
 
   return (
     <div className="pdf-editor-page animate-fade-in-up">
-      <Header tagline="PDF MANAGEMENT & EDITING" />
+      <Header tagline="Powerful Tools for Everyday Work" />
 
       <div className="container">
         {/* Navigation Breadcrumb */}

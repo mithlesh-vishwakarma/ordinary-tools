@@ -1,15 +1,6 @@
 import { useNavigate } from 'react-router-dom';
 import Header from '../components/Header';
-import { 
-  YouTubeIcon, 
-  InstagramIcon, 
-  PdfIcon, 
-  VideoIcon, 
-  MergeIcon, 
-  RotateIcon, 
-  KeyIcon, 
-  ArrowRightIcon 
-} from '../components/Icons';
+import { ShieldCheckIcon, LockIcon, ZapIcon, ArrowRightIcon } from '../components/Icons';
 
 export default function LandingPage() {
   const navigate = useNavigate();
@@ -19,119 +10,85 @@ export default function LandingPage() {
       <Header />
 
       <div className="container">
-        {/* Simple & Clean Hero */}
-        <section className="landing-hero-simple">
-          <h1 className="landing-hero__title">
-            Simple Tools for <span className="gradient-text">Everyday Tasks</span>
+        <section className="landing-welcome-section">
+          {/* Welcome Badge */}
+          <div className="welcome-pill">
+            <span className="welcome-pill__dot"></span>
+            <span>Welcome to OrdinaryTools</span>
+          </div>
+
+          {/* Main Welcome Title */}
+          <h1 className="welcome-hero__title">
+            Simple, Powerful Tools for <span className="gradient-text">Everyday Tasks</span>
           </h1>
-          <p className="landing-hero__subtitle">
-            Fast, free, and private web tools. No paywalls, no watermarks, no registration needed.
+
+          {/* Subtitle / Intro */}
+          <p className="welcome-hero__subtitle">
+            A fast, free, and privacy-first suite of utilities crafted to make your everyday work effortless. No paywalls, no tracking, and no registration required.
           </p>
-        </section>
 
-        {/* Big Cards - What We Provide */}
-        <section className="big-tools-section">
-          <div className="big-tools-grid">
-            {/* Card 1: Video Downloader */}
-            <div 
-              className="big-tool-card glass-card"
-              onClick={() => navigate('/tools/video-downloader')}
-              role="button"
-              tabIndex={0}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter' || e.key === ' ') {
-                  navigate('/tools/video-downloader');
-                }
-              }}
-            >
-              <div className="big-tool-card__icon icon--video">
-                <VideoIcon />
-              </div>
-              <h2 className="big-tool-card__title">Video Downloader</h2>
-              <p className="big-tool-card__desc">
-                Download videos, shorts, reels, and audio from YouTube and Instagram in original high quality.
-              </p>
-
-              <div className="big-tool-card__chips">
-                <span className="big-chip">
-                  <YouTubeIcon /> YouTube (4K & MP3)
-                </span>
-                <span className="big-chip">
-                  <InstagramIcon /> Instagram Reels & Posts
-                </span>
-              </div>
-
-              <div className="big-tool-card__action">
-                <span className="btn btn--primary btn--large">
-                  <span>Open Video Downloader</span>
-                  <ArrowRightIcon />
-                </span>
-              </div>
+          {/* Privacy & Browser Memory Assurance Card */}
+          <div className="privacy-feature-card glass-card">
+            <div className="privacy-feature-card__icon">
+              <ShieldCheckIcon />
             </div>
 
-            {/* Card 2: PDF Editor */}
-            <div 
-              className="big-tool-card glass-card"
-              onClick={() => navigate('/tools/pdf-editor')}
-              role="button"
-              tabIndex={0}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter' || e.key === ' ') {
-                  navigate('/tools/pdf-editor');
-                }
-              }}
-            >
-              <div className="big-tool-card__icon icon--pdf">
-                <PdfIcon />
-              </div>
-              <h2 className="big-tool-card__title">PDF Editor</h2>
-              <p className="big-tool-card__desc">
-                Merge multiple documents, extract pages, and rotate PDFs 100% in your browser with complete privacy.
+            <div className="privacy-feature-card__content">
+              <h2 className="privacy-feature-card__title">
+                100% Client-Side & Private
+              </h2>
+              <p className="privacy-feature-card__desc">
+                All your documents and files are completely safe inside your browser. All file processing runs locally in your device’s client memory (RAM) — your documents are never uploaded to any external server or stored in the cloud.
               </p>
 
-              <div className="big-tool-card__chips">
-                <span className="big-chip">
-                  <MergeIcon /> Merge & Split PDFs
-                </span>
-                <span className="big-chip">
-                  <RotateIcon /> Rotate & Inspect Pages
-                </span>
-              </div>
+              <div className="privacy-feature-card__points">
+                <div className="privacy-point">
+                  <div className="privacy-point__icon">
+                    <LockIcon />
+                  </div>
+                  <div className="privacy-point__text">
+                    <strong>Local Memory Only</strong>
+                    <span>Processing takes place entirely within your browser session.</span>
+                  </div>
+                </div>
 
-              <div className="big-tool-card__action">
-                <span className="btn btn--primary btn--large">
-                  <span>Open PDF Editor</span>
-                  <ArrowRightIcon />
-                </span>
+                <div className="privacy-point">
+                  <div className="privacy-point__icon">
+                    <ShieldCheckIcon />
+                  </div>
+                  <div className="privacy-point__text">
+                    <strong>Zero Server Uploads</strong>
+                    <span>Your documents never leave your computer or device.</span>
+                  </div>
+                </div>
+
+                <div className="privacy-point">
+                  <div className="privacy-point__icon">
+                    <ZapIcon />
+                  </div>
+                  <div className="privacy-point__text">
+                    <strong>Instant & Secure</strong>
+                    <span>Zero latency transfers, completely private by design.</span>
+                  </div>
+                </div>
               </div>
             </div>
           </div>
 
-          {/* Quick Access Bar for Other Tools */}
-          <div className="more-tools-bar glass-card">
-            <div className="more-tools-info">
-              <span className="more-tools-title">Looking for more?</span>
-              <span className="more-tools-sub">Explore Password Generator, Mocks, and more utilities.</span>
-            </div>
-            <div className="more-tools-actions">
-              <button 
-                onClick={() => navigate('/password-generator')} 
-                className="btn btn--secondary btn--small"
-              >
-                <KeyIcon />
-                <span>Password Generator</span>
-              </button>
-              <button 
-                onClick={() => navigate('/tools')} 
-                className="btn btn--primary btn--small"
-              >
-                <span>View All Tools</span>
-                <ArrowRightIcon />
-              </button>
-            </div>
+          {/* Call to action */}
+          <div className="welcome-cta">
+            <button 
+              onClick={() => navigate('/tools')} 
+              className="btn btn--primary btn--large"
+            >
+              <span>Explore Tools</span>
+              <ArrowRightIcon />
+            </button>
           </div>
         </section>
       </div>
     </div>
   );
 }
+
+

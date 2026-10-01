@@ -5,7 +5,7 @@ interface Props {
 }
 
 export default function Header({ 
-  tagline = "THE ULTIMATE MEDIA TOOLKIT"
+  tagline = "Powerful Tools for Everyday Work"
 }: Props) {
   return (
     <header className="header" id="header">
@@ -15,10 +15,24 @@ export default function Header({
             <Link 
               to="/" 
               className="header__brand" 
-              style={{ cursor: 'pointer', textDecoration: 'none' }}
+              title="OrdinaryTools - Home"
             >
-              <div className="header__logo-text">&lt; OrdinaryTools /&gt;</div>
-              <div className="logo-subtitle">{tagline}</div>
+              <div className="header__logo-wrapper">
+                <img 
+                  src="/logo.png" 
+                  alt="OrdinaryTools Logo" 
+                  className="header__logo-img" 
+                />
+              </div>
+              <div className="header__brand-text">
+                <div className="header__logo-title">
+                  <span className="logo-bracket">&lt;&nbsp;</span>
+                  <span className="logo-word-ordinary">Ordinary</span>
+                  <span className="logo-word-tools">Tools</span>
+                  <span className="logo-bracket">&nbsp;/&gt;</span>
+                </div>
+                <div className="logo-subtitle">{tagline}</div>
+              </div>
             </Link>
           </div>
 
@@ -26,7 +40,6 @@ export default function Header({
             <div className="header__menu">
               <NavLink to="/tools" className="header__menu-link">Tools</NavLink>
               <NavLink to="/mocks" className="header__menu-link">Mocks</NavLink>
-              <NavLink to="/password-generator" className="header__menu-link">Password Generator</NavLink>
             </div>
           </div>
 

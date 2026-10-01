@@ -21,6 +21,7 @@ export default function VideoDownloaderHub() {
         </div>
 
         <div className="header__hero">
+          <div className="subtool-pill subtool-pill--purple">Video & Audio Tools</div>
           <h1 className="header__title">Video Downloader Suite</h1>
           <p className="header__subtitle">
             Download high-definition videos, audio, and reels from YouTube and Instagram in seconds.
@@ -31,15 +32,20 @@ export default function VideoDownloaderHub() {
         <div className="tool-grid">
           {/* YouTube Card */}
           <div 
-            className="tool-card glass-card" 
+            className="tool-card tool-card--youtube glass-card" 
             onClick={() => navigate('/youtube')}
             role="button"
             tabIndex={0}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' || e.key === ' ') {
+                navigate('/youtube');
+              }
+            }}
           >
+            <div className="tool-card__badge tool-card__badge--popular">Popular</div>
             <div className="tool-card__icon youtube">
               <YouTubeIcon />
             </div>
-            <div className="tool-card__badge">Popular</div>
             <h2 className="tool-card__title">YouTube Toolkit</h2>
             <p className="tool-card__desc">
               Download YouTube videos, Shorts, and audio extracts in multiple formats and qualities up to 4K 60FPS.
@@ -49,23 +55,30 @@ export default function VideoDownloaderHub() {
               <span className="feature-tag">MP3 Audio 320kbps</span>
               <span className="feature-tag">Shorts Supported</span>
             </div>
-            <button className="btn btn--primary btn--full" style={{ marginTop: 'auto' }}>
-              <span>Launch YouTube Downloader</span>
-              <ArrowRightIcon />
-            </button>
+            <div className="tool-card__action">
+              <span className="btn btn--primary btn--full">
+                <span>Launch YouTube Downloader</span>
+                <ArrowRightIcon />
+              </span>
+            </div>
           </div>
 
           {/* Instagram Card */}
           <div 
-            className="tool-card glass-card" 
+            className="tool-card tool-card--instagram glass-card" 
             onClick={() => navigate('/instagram')}
             role="button"
             tabIndex={0}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' || e.key === ' ') {
+                navigate('/instagram');
+              }
+            }}
           >
+            <div className="tool-card__badge tool-card__badge--new">New</div>
             <div className="tool-card__icon instagram">
               <InstagramIcon />
             </div>
-            <div className="tool-card__badge">New</div>
             <h2 className="tool-card__title">Instagram Toolkit</h2>
             <p className="tool-card__desc">
               Save Reels, Posts, and Videos instantly from Instagram. Fast, secure, and preserves original resolution.
@@ -75,16 +88,18 @@ export default function VideoDownloaderHub() {
               <span className="feature-tag">Original Quality</span>
               <span className="feature-tag">Fast Processing</span>
             </div>
-            <button className="btn btn--primary btn--full" style={{ marginTop: 'auto' }}>
-              <span>Launch Instagram Downloader</span>
-              <ArrowRightIcon />
-            </button>
+            <div className="tool-card__action">
+              <span className="btn btn--primary btn--full">
+                <span>Launch Instagram Downloader</span>
+                <ArrowRightIcon />
+              </span>
+            </div>
           </div>
         </div>
 
         {/* Back Link */}
-        <div style={{ textAlign: 'center', marginTop: '40px', marginBottom: '20px' }}>
-          <button onClick={() => navigate('/tools')} className="btn btn--secondary">
+        <div style={{ textAlign: 'center', marginTop: '48px', marginBottom: '20px' }}>
+          <button onClick={() => navigate('/tools')} className="btn btn--secondary hub-back-btn">
             ← Back to All Tools
           </button>
         </div>

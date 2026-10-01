@@ -1,0 +1,22 @@
+{
+  "short_name": "OrdinaryTools",
+  "name": "OrdinaryTools — Powerful Tools for Everyday Work",
+  "description": "Fast, private, and free online utilities: PDF Editor & Annotation Suite, Video Downloader, and Password Generator.",
+  "icons": [
+    {
+      "src": "/favicon.png",
+      "type": "image/png",
+      "sizes": "64x64 32x32 24x24 16x16"
+    },
+    {
+      "src": "/logo.png",
+      "type": "image/png",
+      "sizes": "192x192 512x512",
+      "purpose": "any maskable"
+    }
+  ],
+  "start_url": "/",
+  "background_color": "#0a0e1a",
+  "theme_color": "#00f0ff",
+  "display": "standalone"
+}

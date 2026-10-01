@@ -157,8 +157,7 @@ export async function renderPageToCanvas(
     throw cancelErr;
   }
 
-  // @ts-expect-error pdfjs renderContext interface matching
-  const renderTask = page.render(renderContext);
+  const renderTask = (page as any).render(renderContext);
   currentSession.renderTask = renderTask;
   currentSession.promise = renderTask.promise;
 
@@ -256,8 +255,7 @@ export async function renderPageThumbnail(
     return;
   }
 
-  // @ts-expect-error pdfjs renderContext interface matching
-  const renderTask = page.render(renderContext);
+  const renderTask = (page as any).render(renderContext);
   currentSession.renderTask = renderTask;
   currentSession.promise = renderTask.promise;
 

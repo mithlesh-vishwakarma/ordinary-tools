@@ -4,7 +4,6 @@ import {
   VideoIcon, 
   PdfIcon, 
   KeyIcon, 
-  ZapIcon, 
   ArrowRightIcon 
 } from '../components/Icons';
 
@@ -19,6 +18,8 @@ export default function ToolsHub() {
       icon: <VideoIcon />,
       iconClass: 'icon--video',
       route: '/tools/video-downloader',
+      disabled: true,
+      badge: 'Coming Soon',
     },
     {
       id: 'pdf-editor',
@@ -27,6 +28,7 @@ export default function ToolsHub() {
       icon: <PdfIcon />,
       iconClass: 'icon--pdf',
       route: '/tools/pdf-editor',
+      disabled: false,
     },
     {
       id: 'password-generator',
@@ -35,14 +37,7 @@ export default function ToolsHub() {
       icon: <KeyIcon />,
       iconClass: 'icon--key',
       route: '/password-generator',
-    },
-    {
-      id: 'mocks',
-      title: 'API Mocks',
-      subtitle: 'Mock Data Generator',
-      icon: <ZapIcon />,
-      iconClass: 'icon--zap',
-      route: '/mocks',
+      disabled: false,
     },
   ];
 
@@ -60,24 +55,28 @@ export default function ToolsHub() {
           {tools.map((tool) => (
             <div 
               key={tool.id} 
-              className="simple-tool-card glass-card"
-              onClick={() => navigate(tool.route)}
-              role="button"
-              tabIndex={0}
+              className={`simple-tool-card glass-card ${tool.disabled ? 'simple-tool-card--disabled' : ''}`}
+              onClick={tool.disabled ? undefined : () => navigate(tool.route)}
+              role={tool.disabled ? 'article' : 'button'}
+              aria-disabled={tool.disabled ? 'true' : undefined}
+              tabIndex={tool.disabled ? -1 : 0}
               onKeyDown={(e) => {
-                if (e.key === 'Enter' || e.key === ' ') {
+                if (!tool.disabled && (e.key === 'Enter' || e.key === ' ')) {
                   navigate(tool.route);
                 }
               }}
             >
+              {tool.badge && (
+                <span className="simple-card-badge badge--amber">{tool.badge}</span>
+              )}
               <div className={`simple-tool-icon ${tool.iconClass}`}>
                 {tool.icon}
               </div>
               <h2 className="simple-tool-title">{tool.title}</h2>
               <p className="simple-tool-sub">{tool.subtitle}</p>
               <div className="simple-tool-arrow">
-                <span>Open tool</span>
-                <ArrowRightIcon />
+                <span>{tool.disabled ? 'Unavailable' : 'Open tool'}</span>
+                {!tool.disabled && <ArrowRightIcon />}
               </div>
             </div>
           ))}

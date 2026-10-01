@@ -7,6 +7,7 @@ interface PdfToolbarProps {
   zoom: number;
   canUndo: boolean;
   canRedo: boolean;
+  isExporting?: boolean;
   onPrevPage: () => void;
   onNextPage: () => void;
   onZoomIn: () => void;
@@ -25,6 +26,7 @@ export default function PdfToolbar({
   zoom,
   canUndo,
   canRedo,
+  isExporting = false,
   onPrevPage,
   onNextPage,
   onZoomIn,
@@ -133,10 +135,10 @@ export default function PdfToolbar({
         <button 
           className="btn btn--primary btn--small" 
           onClick={onExport} 
-          disabled={totalPages === 0}
+          disabled={totalPages === 0 || isExporting}
         >
           <DownloadIcon />
-          <span>Download PDF</span>
+          <span>{isExporting ? 'Exporting PDF...' : 'Download PDF'}</span>
         </button>
       </div>
     </div>
